@@ -103,9 +103,25 @@ const seedSports: SportProfile[] = [
     defaultGroupSize: 4,
     defaultKnockoutSize: 8,
   },
+  {
+    id: "sport-badminton",
+    name: "Badminton",
+    playersPerTeam: 1,
+    scoringType: "points",
+    winCondition: "bestOfSets",
+    stagesConfig: ["KNOCKOUT"],
+    defaultGroupSize: 0,
+    defaultKnockoutSize: 64,
+  },
 ];
 
 const seedTeams: Team[] = [
+  ...Array.from({ length: 64 }).map((_, i) => ({
+    id: `team-badminton-${i + 1}`,
+    sportId: "sport-badminton",
+    name: `Player ${i + 1}`,
+    players: [`P. Name ${i + 1}`],
+  })),
   {
     id: "team-fc-north",
     sportId: "sport-football",
@@ -145,6 +161,14 @@ const seedTeams: Team[] = [
 ];
 
 const seedTournaments: Tournament[] = [
+  {
+    id: "tour-badminton-open",
+    sportId: "sport-badminton",
+    name: "Badminton 64-Draw",
+    teamCount: 64,
+    currentStageIndex: 0,
+    status: "RUNNING",
+  },
   {
     id: "tour-autumn-cup",
     sportId: "sport-football",
@@ -1623,12 +1647,39 @@ function SectionStandings({
 function SectionKnockout() {
   const rounds = [
     {
+      name: "Round of 64",
+      matches: Array.from({ length: 32 }).map((_, i) => ({
+        id: `r64-${i}`,
+        a: `Seed ${i * 2 + 1}`,
+        b: `Seed ${i * 2 + 2}`,
+        score: "—",
+      })),
+    },
+    {
+      name: "Round of 32",
+      matches: Array.from({ length: 16 }).map((_, i) => ({
+        id: `r32-${i}`,
+        a: `Winner M${i * 2 + 1}`,
+        b: `Winner M${i * 2 + 2}`,
+        score: "—",
+      })),
+    },
+    {
+      name: "Round of 16",
+      matches: Array.from({ length: 8 }).map((_, i) => ({
+        id: `r16-${i}`,
+        a: `Winner R32-${i * 2 + 1}`,
+        b: `Winner R32-${i * 2 + 2}`,
+        score: "—",
+      })),
+    },
+    {
       name: "Quarterfinals",
       matches: [
-        { id: "q1", a: "Seed 1", b: "Seed 8", score: "—" },
-        { id: "q2", a: "Seed 4", b: "Seed 5", score: "—" },
-        { id: "q3", a: "Seed 2", b: "Seed 7", score: "—" },
-        { id: "q4", a: "Seed 3", b: "Seed 6", score: "—" },
+        { id: "q1", a: "Winner R16-1", b: "Winner R16-2", score: "—" },
+        { id: "q2", a: "Winner R16-3", b: "Winner R16-4", score: "—" },
+        { id: "q3", a: "Winner R16-5", b: "Winner R16-6", score: "—" },
+        { id: "q4", a: "Winner R16-7", b: "Winner R16-8", score: "—" },
       ],
     },
     {
@@ -1647,8 +1698,8 @@ function SectionKnockout() {
   return (
     <div className="space-y-4">
       <SectionHeader
-        title="Knockout"
-        description="Bracket visualization mock. In a full build, winners auto-advance and byes are handled."
+        title="Knockout Bracket"
+        description="Viewing 64-team Badminton Open structure."
         action={
           <Button data-testid="button-knockout-regenerate" variant="secondary" className="h-10 rounded-xl">
             Regenerate
@@ -1657,25 +1708,32 @@ function SectionKnockout() {
       />
 
       <div className="paper overflow-x-auto rounded-2xl border p-5 shadow-sm">
-        <div className="min-w-[760px]">
-          <div className="grid grid-cols-3 gap-5">
+        <div className="min-w-[1500px]">
+          <div className="flex gap-8">
             {rounds.map((r) => (
-              <div key={r.name}>
-                <div className="text-xs font-semibold text-muted-foreground">{r.name}</div>
-                <div className="mt-3 space-y-3">
+              <div key={r.name} className="flex-1">
+                <div className="mb-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  {r.name}
+                </div>
+                <div
+                  className={cn(
+                    "flex flex-col h-full justify-around gap-4",
+                    r.name === "Round of 64" ? "space-y-2" : ""
+                  )}
+                >
                   {r.matches.map((m) => (
                     <div
                       key={m.id}
                       data-testid={`card-bracket-${m.id}`}
-                      className="rounded-2xl border bg-background/60 p-4 shadow-xs"
+                      className="group relative rounded-xl border bg-background/60 p-3 shadow-xs transition hover:border-primary/50"
                     >
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium">{m.a}</span>
-                        <span className="text-xs text-muted-foreground tabular-nums">{m.score}</span>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-medium truncate max-w-[80px]">{m.a}</span>
+                        <span className="text-muted-foreground tabular-nums">{m.score}</span>
                       </div>
-                      <div className="mt-2 flex items-center justify-between text-sm">
-                        <span className="font-medium">{m.b}</span>
-                        <span className="text-xs text-muted-foreground tabular-nums">{m.score}</span>
+                      <div className="mt-1 flex items-center justify-between text-[11px] border-t pt-1 border-border/40">
+                        <span className="font-medium truncate max-w-[80px]">{m.b}</span>
+                        <span className="text-muted-foreground tabular-nums">{m.score}</span>
                       </div>
                     </div>
                   ))}
