@@ -385,217 +385,36 @@ function EmptyState({
 }
 
 export default function Dashboard() {
-  const [active, setActive] = useState("sports");
+  const [active, setActive] = useState("knockout");
   const [sports, setSports] = useState<SportProfile[]>(seedSports);
   const [teams, setTeams] = useState<Team[]>(seedTeams);
   const [tournaments, setTournaments] = useState<Tournament[]>(seedTournaments);
   const [matches, setMatches] = useState<Match[]>(seedMatches);
 
-  const [search, setSearch] = useState("");
-
-  const [createSportOpen, setCreateSportOpen] = useState(false);
-  const [createTournamentOpen, setCreateTournamentOpen] = useState(false);
-  const [createTeamOpen, setCreateTeamOpen] = useState(false);
-
-  const [newSport, setNewSport] = useState({
-    name: "",
-    playersPerTeam: 5,
-    scoringType: "points" as SportProfile["scoringType"],
-    winCondition: "higherScore" as SportProfile["winCondition"],
-    stagesConfig: ["GROUP", "KNOCKOUT"] as StageType[],
-    defaultGroupSize: 4,
-    defaultKnockoutSize: 8,
-  });
-
-  const filteredSports = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return sports;
-    return sports.filter((s) => s.name.toLowerCase().includes(q));
-  }, [sports, search]);
-
-  const activeSportId = sports[0]?.id;
-  const activeSport = sports.find((s) => s.id === activeSportId) ?? sports[0];
-
-  const teamsForActiveSport = useMemo(() => {
-    if (!activeSportId) return [];
-    return teams.filter((t) => t.sportId === activeSportId);
-  }, [teams, activeSportId]);
-
-  function createSport() {
-    if (!newSport.name.trim()) return;
-    const sport: SportProfile = {
-      id: uid("sport"),
-      name: newSport.name.trim(),
-      playersPerTeam: newSport.playersPerTeam,
-      scoringType: newSport.scoringType,
-      winCondition: newSport.winCondition,
-      stagesConfig: newSport.stagesConfig,
-      defaultGroupSize: newSport.defaultGroupSize,
-      defaultKnockoutSize: newSport.defaultKnockoutSize,
-    };
-    setSports((prev) => [sport, ...prev]);
-    setCreateSportOpen(false);
-    setNewSport((s) => ({ ...s, name: "" }));
-  }
-
-  function createTournament(payload: { name: string; sportId: string; teamCount: number }) {
-    if (!payload.name.trim()) return;
-    const t: Tournament = {
-      id: uid("tour"),
-      sportId: payload.sportId,
-      name: payload.name.trim(),
-      teamCount: payload.teamCount,
-      currentStageIndex: 0,
-      status: "NOT_STARTED",
-    };
-    setTournaments((p) => [t, ...p]);
-    setCreateTournamentOpen(false);
-  }
-
-  function createTeam(payload: { name: string; sportId: string; players: string[] }) {
-    if (!payload.name.trim()) return;
-    const team: Team = {
-      id: uid("team"),
-      sportId: payload.sportId,
-      name: payload.name.trim(),
-      players: payload.players,
-    };
-    setTeams((p) => [team, ...p]);
-    setCreateTeamOpen(false);
-  }
-
-  const totals = useMemo(() => {
-    return {
-      sports: sports.length,
-      tournaments: tournaments.length,
-      teams: teams.length,
-      matches: matches.length,
-    };
-  }, [sports, tournaments, teams, matches]);
-
   return (
-    <Shell>
-      <TopBar
-        title="Multi-Sport Tournament Manager"
-        subtitle="Configure sport rules, generate stages, enter results, and visualize standings—everything in one calm dashboard."
-        right={
-          <>
-            <div className="relative hidden sm:block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                data-testid="input-global-search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search sports…"
-                className="h-10 w-[280px] rounded-xl pl-9"
-              />
-            </div>
-            <Button
-              data-testid="button-open-settings"
-              variant="secondary"
-              className="h-10 rounded-xl"
-              onClick={() => setActive("settings")}
-            >
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </Button>
-          </>
-        }
-      />
-
-      <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <div className="lg:col-span-4">
-          <SidebarNav active={active} onSelect={setActive} />
+    <div className="min-h-screen bg-background relative overflow-hidden">
+      <div className="pointer-events-none fixed inset-0 grain opacity-70" />
+      
+      {/* Full Screen Bracket View */}
+      <div className="relative h-screen flex flex-col">
+        <div className="p-6 border-b bg-background/80 backdrop-blur-md flex items-center justify-between z-10">
+          <div>
+            <h1 className="text-display text-2xl font-bold tracking-tight">Badminton 64-Draw</h1>
+            <p className="text-sm text-muted-foreground">Tournament Knockout Bracket • 64 Teams</p>
+          </div>
+          <div className="flex gap-2">
+            <Badge variant="outline" className="rounded-full px-4 py-1">Live Bracket</Badge>
+            <Badge variant="outline" className="rounded-full px-4 py-1">Badminton Open 2026</Badge>
+          </div>
         </div>
 
-        <div className="lg:col-span-8">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <KpiCard label="Sports" value={`${totals.sports}`} hint="Profiles & rules" />
-            <KpiCard label="Tournaments" value={`${totals.tournaments}`} hint="Active & planned" />
-            <KpiCard label="Teams" value={`${totals.teams}`} hint="Registered rosters" />
-            <KpiCard label="Matches" value={`${totals.matches}`} hint="Scheduled & played" />
-          </div>
-
-          <div className="mt-6">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={active}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
-                className="rounded-2xl"
-              >
-                {active === "sports" ? (
-                  <SectionSports
-                    sports={filteredSports}
-                    onCreate={() => setCreateSportOpen(true)}
-                  />
-                ) : null}
-
-                {active === "tournaments" ? (
-                  <SectionTournaments
-                    sports={sports}
-                    tournaments={tournaments}
-                    onCreate={() => setCreateTournamentOpen(true)}
-                  />
-                ) : null}
-
-                {active === "teams" ? (
-                  <SectionTeams
-                    sports={sports}
-                    teams={teams}
-                    onCreate={() => setCreateTeamOpen(true)}
-                  />
-                ) : null}
-
-                {active === "matches" ? (
-                  <SectionMatches
-                    sports={sports}
-                    teams={teams}
-                    tournaments={tournaments}
-                    matches={matches}
-                    setMatches={setMatches}
-                  />
-                ) : null}
-
-                {active === "standings" ? (
-                  <SectionStandings sports={sports} tournaments={tournaments} teams={teams} matches={matches} />
-                ) : null}
-
-                {active === "knockout" ? <SectionKnockout /> : null}
-
-                {active === "stages" ? <SectionStages sport={activeSport} /> : null}
-
-                {active === "settings" ? <SectionSettings /> : null}
-              </motion.div>
-            </AnimatePresence>
+        <div className="flex-1 overflow-auto bg-background/40">
+          <div className="p-8">
+            <SectionKnockout />
           </div>
         </div>
       </div>
-
-      <CreateSportDialog
-        open={createSportOpen}
-        onOpenChange={setCreateSportOpen}
-        sport={newSport}
-        setSport={setNewSport}
-        onCreate={createSport}
-      />
-
-      <CreateTournamentDialog
-        open={createTournamentOpen}
-        onOpenChange={setCreateTournamentOpen}
-        sports={sports}
-        onCreate={createTournament}
-      />
-
-      <CreateTeamDialog
-        open={createTeamOpen}
-        onOpenChange={setCreateTeamOpen}
-        sports={sports}
-        onCreate={createTeam}
-      />
-    </Shell>
+    </div>
   );
 }
 
@@ -1696,52 +1515,46 @@ function SectionKnockout() {
   ];
 
   return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="Knockout Bracket"
-        description="Viewing 64-team Badminton Open structure."
-        action={
-          <Button data-testid="button-knockout-regenerate" variant="secondary" className="h-10 rounded-xl">
-            Regenerate
-          </Button>
-        }
-      />
-
-      <div className="paper overflow-x-auto rounded-2xl border p-5 shadow-sm">
-        <div className="min-w-[1500px]">
-          <div className="flex gap-8">
-            {rounds.map((r) => (
-              <div key={r.name} className="flex-1">
-                <div className="mb-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  {r.name}
-                </div>
+    <div className="min-w-[1600px] h-full flex flex-col">
+      <div className="flex gap-8 h-full">
+        {rounds.map((r) => (
+          <div key={r.name} className="flex-1 flex flex-col">
+            <div className="mb-6 text-center">
+              <span className="px-4 py-1 rounded-full bg-accent text-accent-foreground text-[10px] font-bold uppercase tracking-widest border border-accent-border">
+                {r.name}
+              </span>
+            </div>
+            <div
+              className={cn(
+                "flex flex-col flex-1 justify-around gap-4 pb-8",
+                r.name === "Round of 64" ? "space-y-1" : ""
+              )}
+            >
+              {r.matches.map((m) => (
                 <div
-                  className={cn(
-                    "flex flex-col h-full justify-around gap-4",
-                    r.name === "Round of 64" ? "space-y-2" : ""
-                  )}
+                  key={m.id}
+                  data-testid={`card-bracket-${m.id}`}
+                  className="group relative rounded-xl border bg-card/80 p-3 shadow-sm transition hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 duration-200"
                 >
-                  {r.matches.map((m) => (
-                    <div
-                      key={m.id}
-                      data-testid={`card-bracket-${m.id}`}
-                      className="group relative rounded-xl border bg-background/60 p-3 shadow-xs transition hover:border-primary/50"
-                    >
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium truncate max-w-[80px]">{m.a}</span>
-                        <span className="text-muted-foreground tabular-nums">{m.score}</span>
-                      </div>
-                      <div className="mt-1 flex items-center justify-between text-[11px] border-t pt-1 border-border/40">
-                        <span className="font-medium truncate max-w-[80px]">{m.b}</span>
-                        <span className="text-muted-foreground tabular-nums">{m.score}</span>
-                      </div>
+                  <div className="flex items-center justify-between text-[11px] mb-1.5">
+                    <div className="flex items-center gap-2 truncate">
+                      <div className="w-1 h-3 rounded-full bg-muted group-hover:bg-primary transition-colors" />
+                      <span className="font-semibold truncate">{m.a}</span>
                     </div>
-                  ))}
+                    <span className="text-muted-foreground font-mono bg-muted/30 px-1.5 rounded">{m.score}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-border/50">
+                    <div className="flex items-center gap-2 truncate">
+                      <div className="w-1 h-3 rounded-full bg-muted group-hover:bg-primary/60 transition-colors" />
+                      <span className="font-semibold truncate">{m.b}</span>
+                    </div>
+                    <span className="text-muted-foreground font-mono bg-muted/30 px-1.5 rounded">{m.score}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        ))}
       </div>
     </div>
   );
