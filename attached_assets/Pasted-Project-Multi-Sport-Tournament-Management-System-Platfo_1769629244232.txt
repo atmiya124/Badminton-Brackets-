@@ -1,0 +1,213 @@
+Project: Multi-Sport Tournament Management System
+Platform: Replit (Node.js, Next.js with App Router, TypeScript, Tailwind CSS)
+Goal: Build a fully configurable tournament platform where each sport can have a different structure, scoring rules, and stages.
+
+1. Project Requirements
+
+Next.js with App Router
+
+TypeScript
+
+Tailwind CSS
+
+Database: Prisma + SQLite (or PostgreSQL if preferred)
+
+Shadcn/ui for components (optional)
+
+2. Core Features
+2.1 Sport Profiles
+
+Add, edit, delete sports
+
+Each sport stores:
+
+name
+
+playersPerTeam
+
+scoringType (points / goals / sets / custom)
+
+winCondition (higherScore / bestOfSets / aggregate)
+
+stagesConfig (array of stages: GROUP / LEAGUE / KNOCKOUT)
+
+defaultGroupSize
+
+defaultKnockoutSize
+
+2.2 Tournament Management
+
+Create tournament under a selected sport
+
+Set number of teams
+
+Stage flow dynamic, based on sport config
+
+Generate:
+
+Groups & group matches
+
+Knockout bracket
+
+League tables
+
+Lock stages after completion
+
+Reset / regenerate bracket
+
+2.3 Team Management
+
+Add / edit / delete teams
+
+Player list is dynamic per sport
+
+Assign teams to tournaments
+
+2.4 Matches
+
+Enter results
+
+Auto-calculate standings / rankings
+
+Auto-advance winners in knockout
+
+3. Bracket & Stage System
+
+Must support any number of teams
+
+Calculate rounds automatically (byes if not power of 2)
+
+Render dynamic UI:
+
+Group / league tables
+
+Knockout brackets (columns per round)
+
+Match cards with scores & winner highlight
+
+4. Admin Dashboard (Manage Page)
+
+Tabs:
+
+Sports | Tournaments | Teams | Stages | Matches | Standings | Knockout | Settings
+
+
+Functionalities:
+
+Full CRUD for sports, tournaments, teams
+
+Stage generator & match generator
+
+Enter results & auto-advance
+
+Bracket visualization
+
+Configurable tournament structure per sport
+
+5. Public Pages
+
+View group tables
+
+View match schedule
+
+View knockout bracket
+
+View results
+
+6. Data Models (Prisma / DB Schema)
+
+Sport
+
+id
+name
+playersPerTeam
+scoringConfig (json)
+tournamentCapabilities (json)
+
+
+Tournament
+
+id
+name
+sportId
+stagesConfig (json)
+teamCount
+currentStageIndex
+status (NOT_STARTED / RUNNING / FINISHED)
+
+
+Team
+
+id
+name
+players[] // dynamic per sport
+sportId
+
+
+Match
+
+id
+tournamentId
+stageIndex
+team1Id
+team2Id
+scoreData (json)
+winnerId
+
+7. Ranking Rules
+
+Configurable per sport
+
+Default ranking order:
+
+Wins
+
+Score difference
+
+Head-to-head
+
+Points scored
+
+8. UI/UX Requirements
+
+Admin-friendly dashboard
+
+Mobile-friendly
+
+Stage visualizer for all tournament types
+
+Bracket tree for knockout
+
+Table view for group/league
+
+Click match → enter scores → auto-update
+
+9. Development Order
+
+Setup Next.js + Tailwind + Prisma in Replit
+
+Sport profile system
+
+Tournament system (dynamic stages)
+
+Team management
+
+Match generator & stage generator
+
+Standings & ranking engine
+
+Knockout bracket generator & UI
+
+Admin dashboard UI
+
+Public pages & views
+
+10. Replit-Specific Instructions
+
+Use Next.js dev server (npm run dev)
+
+Use SQLite by default for simplicity in Replit
+
+Optional: Deploy with Replit hosting
+
+Use .env for DB connection if using PostgreSQL
