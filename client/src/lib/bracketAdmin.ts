@@ -1,6 +1,6 @@
 /** Shared defaults and validation for bracket admin (Round 1 team names, etc.) */
 
-export const DEFAULT_ROUND1_TEAM_NUMBERS = Array.from({ length: 64 }, (_, i) => String(i + 1));
+export const DEFAULT_ROUND1_TEAM_NUMBERS = Array.from({ length: 100 }, (_, i) => String(i + 1));
 
 /** Left bracket Round 1 pairings [teamA, teamB, court] – same order as bracket display */
 export const LEFT_ROUND1_PAIRINGS: [number, number, number][] = [
@@ -14,7 +14,7 @@ export const RIGHT_ROUND1_PAIRINGS: [number, number, number][] = [
   [4, 61, 4], [8, 57, 8], [12, 53, 4], [16, 49, 8], [20, 45, 4], [24, 41, 8], [28, 37, 4], [32, 33, 8],
 ];
 
-export const MAX_ROUND1_TEAM_NUMBER = 64;
+export const MAX_ROUND1_TEAM_NUMBER = 100;
 
 export function onlyDigits(value: string): string {
   const digits = value.replace(/\D/g, "");

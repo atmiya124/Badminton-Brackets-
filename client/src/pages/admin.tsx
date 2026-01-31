@@ -77,7 +77,7 @@ export default function AdminDashboard() {
               Round 1 team names
             </CardTitle>
             <CardDescription>
-              Set the team number (1–64) for each match. Order matches the bracket (left column then right column). No duplicates; numbers only.
+              Set the team number (1–100) for each match. Order matches the bracket (left column then right column). No duplicates; numbers only.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -87,7 +87,7 @@ export default function AdminDashboard() {
                   <span>Only numbers allowed in Team(s): {Array.from(nonNumericSet).sort((a, b) => a - b).join(", ")}. </span>
                 )}
                 {overMaxSet.size > 0 && (
-                  <span>Max 64 allowed. Invalid in Team(s): {Array.from(overMaxSet).sort((a, b) => a - b).join(", ")}. </span>
+                  <span>Max 100 allowed. Invalid in Team(s): {Array.from(overMaxSet).sort((a, b) => a - b).join(", ")}. </span>
                 )}
                 {duplicateSet.size > 0 && (
                   <span>No duplicate numbers. Duplicates in Team(s): {Array.from(duplicateSet).sort((a, b) => a - b).join(", ")}.</span>
