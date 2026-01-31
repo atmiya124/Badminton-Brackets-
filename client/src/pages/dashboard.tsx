@@ -820,6 +820,9 @@ function SectionKnockout({
     "#34d399", // Court 8 – emerald
   ];
 
+  // Court assignment state for matches (by match index)
+  const [courtAssignments, setCourtAssignments] = useState<{ [key: string]: number }>({});
+
   const renderMatchBox = (opts: {
     match: DisplayMatch;
     side: BracketSide;
@@ -850,6 +853,9 @@ function SectionKnockout({
       borderWhenAnyTeam,
       courtNumber,
     } = opts;
+
+    // Use assigned court if set, else default
+    const assignedCourt = courtAssignments[match.id] || courtNumber;
 
     const result = matchResults[match.id];
     const team1Winner = result?.winner === match.team1.id;
@@ -887,14 +893,38 @@ function SectionKnockout({
         }}
       >
         <div
-          className="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-medium mb-0.5 mx-auto"
+          className="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-medium mb-0.5 mx-auto gap-1"
           style={{
-            color: COURT_COLORS[(courtNumber - 1) % COURT_COLORS.length],
-            backgroundColor: `${COURT_COLORS[(courtNumber - 1) % COURT_COLORS.length]}20`,
+            color: COURT_COLORS[(assignedCourt - 1) % COURT_COLORS.length],
+            backgroundColor: `${COURT_COLORS[(assignedCourt - 1) % COURT_COLORS.length]}20`,
           }}
-          hidden
         >
-          Court {courtNumber}
+          <select
+            value={assignedCourt}
+            onChange={e => setCourtAssignments(prev => ({ ...prev, [match.id]: Number(e.target.value) }))}
+            className="h-6 w-20 text-xs px-1 py-0.5 rounded border appearance-none focus:outline-none"
+            style={{
+              background: 'transparent',
+              color: COURT_COLORS[(assignedCourt - 1) % COURT_COLORS.length],
+              WebkitAppearance: 'none',
+              MozAppearance: 'none',
+              appearance: 'none',
+              paddingRight: '0.5rem',
+            }}
+          >
+            {[...Array(8)].map((_, i) => (
+              <option
+                key={i + 1}
+                value={i + 1}
+                style={{
+                  color: COURT_COLORS[i % COURT_COLORS.length],
+                  background: '#fff',
+                }}
+              >
+                {`Court ${i + 1}`}
+              </option>
+            ))}
+          </select>
         </div>
         <div
           className={getRowClass(team1Winner, match.team1.advanced)}
