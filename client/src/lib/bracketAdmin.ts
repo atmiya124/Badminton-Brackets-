@@ -1,6 +1,17 @@
 /** Shared defaults and validation for bracket admin (Round 1 team names, etc.) */
 
-export const DEFAULT_ROUND1_TEAM_NUMBERS = Array.from({ length: 100 }, (_, i) => String(i + 1));
+export const DEFAULT_ROUND1_TEAM_NUMBERS = [
+  // Left side
+  "36", "14", "34", "24", "26", "27", "32", "60",
+  "48", "39", "19", "41", "4", "1", "11", "68",
+  "30", "52", "52", "61", "54", "79", "83", "28",
+  "3", "44", "76", "42", "20", "72", "38", "33", "74", "65",
+  // Right side
+  "62", "22", "57", "16", "71", "15", "12", "43",
+  "25", "40", "50", "18", "53", "75", "51", "84",
+  "49", "6", "67", "59", "73", "27", "29", "9",
+  "5", "63", "45", "31", "55", "69", "37", "58"
+];
 
 /** Left bracket Round 1 pairings [teamA, teamB, court] – same order as bracket display */
 export const LEFT_ROUND1_PAIRINGS: [number, number, number][] = [

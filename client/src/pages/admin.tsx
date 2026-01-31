@@ -25,7 +25,7 @@ export default function AdminDashboard() {
   } = useBracketAdmin();
 
   // Local (draft) state – only pushed to dashboard when user clicks Save
-  const [localTeamNumbers, setLocalTeamNumbers] = useState<string[]>(() => [...round1TeamNumbers]);
+  const [localTeamNumbers, setLocalTeamNumbers] = useState<string[]>(() => [...DEFAULT_ROUND1_TEAM_NUMBERS]);
   const [localChampionNames, setLocalChampionNames] = useState(() => ({
     player1: championPlayerNames.player1,
     player2: championPlayerNames.player2,
