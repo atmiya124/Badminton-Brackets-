@@ -37,7 +37,6 @@ export default function AdminDashboard() {
   const overMaxSet = new Set(overMaxSlots);
 
   const handleSaveTeams = () => {
-    if (!valid) return;
     setRound1TeamNumbers([...localTeamNumbers]);
   };
 
@@ -192,7 +191,7 @@ export default function AdminDashboard() {
               >
                 Reset to default
               </Button>
-              <Button onClick={handleSaveTeams} disabled={!valid}>
+              <Button onClick={handleSaveTeams}>
                 <Save className="h-4 w-4 mr-2" />
                 Save teams
               </Button>
