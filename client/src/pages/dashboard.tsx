@@ -1,24 +1,17 @@
-import { useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import React, { useMemo, useReducer, useState } from "react";
+import { motion } from "framer-motion";
 import {
-  Calendar,
-  ChevronRight,
-  Plus,
-  Search,
+  Crown,
+  Pencil,
+  RotateCcw,
   Settings,
-  Shield,
-  Swords,
-  Table2,
-  Trophy,
-  Users,
+  Undo2,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ShaderGradientCanvas, ShaderGradient } from "@shadergradient/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -26,1650 +19,1360 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import {
+  DEFAULT_ROUND1_TEAM_NUMBERS,
+  getRound1Validation,
+  LEFT_ROUND1_PAIRINGS,
+  onlyDigits,
+  RIGHT_ROUND1_PAIRINGS,
+} from "@/lib/bracketAdmin";
+import { useBracketAdmin } from "@/context/BracketAdminContext";
+import { Link } from "wouter";
 
-type StageType = "GROUP" | "LEAGUE" | "KNOCKOUT";
+type KnockoutMatchResults = Record<string, { winner: string; score?: string }>;
 
-type SportProfile = {
-  id: string;
-  name: string;
-  playersPerTeam: number;
-  scoringType: "points" | "goals" | "sets" | "custom";
-  winCondition: "higherScore" | "bestOfSets" | "aggregate";
-  stagesConfig: StageType[];
-  defaultGroupSize: number;
-  defaultKnockoutSize: number;
+type KnockoutHistoryEntry = {
+  matchId: string;
+  prev?: { winner: string; score?: string };
 };
 
-type Team = {
-  id: string;
-  sportId: string;
-  name: string;
-  players: string[];
+type KnockoutState = {
+  results: KnockoutMatchResults;
+  history: KnockoutHistoryEntry[];
 };
 
-type Tournament = {
-  id: string;
-  sportId: string;
-  name: string;
-  teamCount: number;
-  currentStageIndex: number;
-  status: "NOT_STARTED" | "RUNNING" | "FINISHED";
-};
+type KnockoutAction =
+  | { type: "pick"; matchId: string; winner: string; score?: string }
+  | { type: "undo" }
+  | { type: "reset" };
 
-type Match = {
-  id: string;
-  tournamentId: string;
-  stageIndex: number;
-  roundLabel: string;
-  team1Id: string;
-  team2Id: string;
-  score1: number | null;
-  score2: number | null;
-};
-
-const seedSports: SportProfile[] = [
-  {
-    id: "sport-football",
-    name: "Football (Goals)",
-    playersPerTeam: 11,
-    scoringType: "goals",
-    winCondition: "higherScore",
-    stagesConfig: ["GROUP", "KNOCKOUT"],
-    defaultGroupSize: 4,
-    defaultKnockoutSize: 16,
-  },
-  {
-    id: "sport-basketball",
-    name: "Basketball (Points)",
-    playersPerTeam: 5,
-    scoringType: "points",
-    winCondition: "higherScore",
-    stagesConfig: ["LEAGUE"],
-    defaultGroupSize: 0,
-    defaultKnockoutSize: 0,
-  },
-  {
-    id: "sport-volleyball",
-    name: "Volleyball (Sets)",
-    playersPerTeam: 6,
-    scoringType: "sets",
-    winCondition: "bestOfSets",
-    stagesConfig: ["GROUP", "KNOCKOUT"],
-    defaultGroupSize: 4,
-    defaultKnockoutSize: 8,
-  },
-  {
-    id: "sport-badminton",
-    name: "Badminton",
-    playersPerTeam: 1,
-    scoringType: "points",
-    winCondition: "bestOfSets",
-    stagesConfig: ["KNOCKOUT"],
-    defaultGroupSize: 0,
-    defaultKnockoutSize: 64,
-  },
-];
-
-const seedTeams: Team[] = [
-  ...Array.from({ length: 64 }).map((_, i) => ({
-    id: `team-badminton-${i + 1}`,
-    sportId: "sport-badminton",
-    name: `Player ${i + 1}`,
-    players: [`P. Name ${i + 1}`],
-  })),
-  {
-    id: "team-fc-north",
-    sportId: "sport-football",
-    name: "FC North",
-    players: ["A. Khan", "S. Rivera", "L. Chen"],
-  },
-  {
-    id: "team-city-11",
-    sportId: "sport-football",
-    name: "City XI",
-    players: ["M. Silva", "J. Novak", "K. Patel"],
-  },
-  {
-    id: "team-hoops-lab",
-    sportId: "sport-basketball",
-    name: "Hoops Lab",
-    players: ["E. Brooks", "T. James", "A. Lee"],
-  },
-  {
-    id: "team-fastbreak",
-    sportId: "sport-basketball",
-    name: "Fastbreak",
-    players: ["S. Price", "N. Green", "I. Park"],
-  },
-  {
-    id: "team-ace-high",
-    sportId: "sport-volleyball",
-    name: "Ace High",
-    players: ["D. Ruiz", "H. Tan", "P. Young"],
-  },
-  {
-    id: "team-block-party",
-    sportId: "sport-volleyball",
-    name: "Block Party",
-    players: ["R. Kim", "C. Stone", "V. Ahmed"],
-  },
-];
-
-const seedTournaments: Tournament[] = [
-  {
-    id: "tour-badminton-open",
-    sportId: "sport-badminton",
-    name: "Badminton 64-Draw",
-    teamCount: 64,
-    currentStageIndex: 0,
-    status: "RUNNING",
-  },
-  {
-    id: "tour-autumn-cup",
-    sportId: "sport-football",
-    name: "Autumn Cup",
-    teamCount: 8,
-    currentStageIndex: 0,
-    status: "RUNNING",
-  },
-  {
-    id: "tour-city-league",
-    sportId: "sport-basketball",
-    name: "City League",
-    teamCount: 10,
-    currentStageIndex: 0,
-    status: "NOT_STARTED",
-  },
-];
-
-const seedMatches: Match[] = [
-  {
-    id: "m1",
-    tournamentId: "tour-autumn-cup",
-    stageIndex: 0,
-    roundLabel: "Group A",
-    team1Id: "team-fc-north",
-    team2Id: "team-city-11",
-    score1: 2,
-    score2: 1,
-  },
-  {
-    id: "m2",
-    tournamentId: "tour-autumn-cup",
-    stageIndex: 0,
-    roundLabel: "Group A",
-    team1Id: "team-city-11",
-    team2Id: "team-fc-north",
-    score1: null,
-    score2: null,
-  },
-];
-
-function uid(prefix: string) {
-  return `${prefix}-${Math.random().toString(16).slice(2)}-${Date.now().toString(16)}`;
-}
-
-function Pill({ label }: { label: string }) {
-  return (
-    <span
-      data-testid={`badge-${label.toLowerCase().replace(/\s+/g, "-")}`}
-      className="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground shadow-xs"
-    >
-      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-      {label}
-    </span>
-  );
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-dvh bg-background">
-      <div className="pointer-events-none fixed inset-0 grain opacity-70" />
-      <div className="mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 lg:px-8">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function TopBar({
-  title,
-  subtitle,
-  right,
-}: {
-  title: string;
-  subtitle: string;
-  right?: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-      <div>
-        <div
-          data-testid="text-app-title"
-          className="text-display text-2xl font-semibold tracking-tight md:text-3xl"
-        >
-          {title}
-        </div>
-        <div data-testid="text-app-subtitle" className="mt-1 text-sm text-muted-foreground">
-          {subtitle}
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Pill label="Sport profiles" />
-          <Pill label="Stages" />
-          <Pill label="Standings" />
-          <Pill label="Knockout" />
-        </div>
-      </div>
-      <div className="flex items-center gap-2">{right}</div>
-    </div>
-  );
-}
-
-function SidebarNav({
-  active,
-  onSelect,
-}: {
-  active: string;
-  onSelect: (key: string) => void;
-}) {
-  const items = [
-    { key: "sports", label: "Sports", icon: Trophy },
-    { key: "tournaments", label: "Tournaments", icon: Calendar },
-    { key: "teams", label: "Teams", icon: Users },
-    { key: "stages", label: "Stages", icon: Table2 },
-    { key: "matches", label: "Matches", icon: Swords },
-    { key: "standings", label: "Standings", icon: Shield },
-    { key: "knockout", label: "Knockout", icon: ChevronRight },
-    { key: "settings", label: "Settings", icon: Settings },
-  ];
-
-  return (
-    <div className="paper rounded-2xl border shadow-sm">
-      <div className="flex items-center justify-between px-4 py-4">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl border bg-background shadow-xs">
-            <Trophy className="h-5 w-5 text-primary" strokeWidth={2.25} />
-          </div>
-          <div>
-            <div data-testid="text-brand" className="text-sm font-semibold">
-              Tournament Ops
-            </div>
-            <div className="text-xs text-muted-foreground">Multi-sport manager</div>
-          </div>
-        </div>
-      </div>
-      <Separator />
-      <div className="px-2 py-2">
-        {items.map((it) => {
-          const Icon = it.icon;
-          const isActive = active === it.key;
-          return (
-            <button
-              key={it.key}
-              type="button"
-              data-testid={`link-nav-${it.key}`}
-              onClick={() => onSelect(it.key)}
-              className={cn(
-                "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition",
-                "hover:bg-accent hover:text-accent-foreground",
-                isActive && "bg-accent text-accent-foreground",
-              )}
-            >
-              <span
-                className={cn(
-                  "grid h-9 w-9 place-items-center rounded-lg border bg-background shadow-xs transition",
-                  isActive ? "border-transparent" : "group-hover:border-transparent",
-                )}
-              >
-                <Icon className="h-4.5 w-4.5 text-foreground" strokeWidth={2.2} />
-              </span>
-              <span className="flex-1">{it.label}</span>
-              <span className={cn("text-xs text-muted-foreground", isActive && "text-foreground/70")}>
-                ▸
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function KpiCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-}) {
-  return (
-    <Card className="paper hover-elevate rounded-2xl border shadow-sm">
-      <div className="p-5">
-        <div data-testid={`text-kpi-${label.toLowerCase().replace(/\s+/g, "-")}`} className="text-xs text-muted-foreground">
-          {label}
-        </div>
-        <div className="mt-2 flex items-end justify-between gap-3">
-          <div className="text-display text-3xl font-semibold tracking-tight">{value}</div>
-          <div className="text-xs text-muted-foreground">{hint}</div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function EmptyState({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="grid place-items-center rounded-2xl border bg-card p-10 shadow-sm">
-      <div className="max-w-md text-center">
-        <div className="text-display text-xl font-semibold">{title}</div>
-        <div className="mt-2 text-sm text-muted-foreground">{description}</div>
-        {action ? <div className="mt-5 flex justify-center">{action}</div> : null}
-      </div>
-    </div>
-  );
+function knockoutReducer(state: KnockoutState, action: KnockoutAction): KnockoutState {
+  switch (action.type) {
+    case "pick": {
+      const prev = state.results[action.matchId];
+      return {
+        results: { ...state.results, [action.matchId]: { winner: action.winner, score: action.score } },
+        history: [...state.history, { matchId: action.matchId, prev }],
+      };
+    }
+    case "undo": {
+      if (state.history.length === 0) return state;
+      const last = state.history[state.history.length - 1];
+      const nextResults: KnockoutMatchResults = { ...state.results };
+      if (last.prev) nextResults[last.matchId] = last.prev;
+      else delete nextResults[last.matchId];
+      return { results: nextResults, history: state.history.slice(0, -1) };
+    }
+    case "reset":
+      return { results: {}, history: [] };
+    default:
+      return state;
+  }
 }
 
 export default function Dashboard() {
-  const [active, setActive] = useState("knockout");
-  const [sports, setSports] = useState<SportProfile[]>(seedSports);
-  const [teams, setTeams] = useState<Team[]>(seedTeams);
-  const [tournaments, setTournaments] = useState<Tournament[]>(seedTournaments);
-  const [matches, setMatches] = useState<Match[]>(seedMatches);
+  const { round1TeamNumbers, setRound1TeamNumbers, championPlayerNames, setChampionPlayerNames } =
+    useBracketAdmin();
+
+  const [editRound1Open, setEditRound1Open] = useState(false);
+
+  const [knockoutState, knockoutDispatch] = useReducer(knockoutReducer, {
+    results: {},
+    history: [],
+  });
+
+  const handleKnockoutPick = (matchId: string, winner: string, score?: string) => {
+    knockoutDispatch({ type: "pick", matchId, winner, score });
+  };
+
+  const handleKnockoutUndo = () => {
+    knockoutDispatch({ type: "undo" });
+  };
+
+  const handleKnockoutReset = () => {
+    knockoutDispatch({ type: "reset" });
+  };
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      <div className="pointer-events-none fixed inset-0 grain opacity-70" />
-      
-      {/* Full Screen Bracket View */}
-      <div className="relative h-screen flex flex-col">
+    <div className="min-h-screen bg-background relative overflow-y-auto">
+      <div className="pointer-events-none fixed inset-0 z-0 opacity-20">
+        <ShaderGradientCanvas fov={45} pixelDensity={1}>
+          <ShaderGradient
+            animate="on"
+            brightness={1}
+            cAzimuthAngle={180}
+            cDistance={2.8}
+            cPolarAngle={80}
+            cameraZoom={9.1}
+            color1="#0f4539"
+            color2="#8d7dca"
+            color3="#212121"
+            envPreset="city"
+            grain="on"
+            lightType="3d"
+            positionX={0}
+            positionY={0}
+            positionZ={0}
+            reflection={0.1}
+            rotationX={50}
+            rotationY={0}
+            rotationZ={-60}
+            shader="defaults"
+            type="waterPlane"
+            uAmplitude={0}
+            uDensity={1.5}
+            uFrequency={0}
+            uSpeed={0.3}
+            uStrength={1.5}
+            uTime={8}
+            wireframe={false}
+          />
+        </ShaderGradientCanvas>
+      </div>
+      <div
+        className="pointer-events-none fixed inset-0 z-[1] bg-cover bg-center bg-no-repeat opacity-12"
+        style={{ backgroundImage: "url('/bg.png')" }}
+        aria-hidden
+      />
+      <div className="relative min-h-screen flex flex-col z-10">
         <div className="p-6 border-b bg-background/80 backdrop-blur-md flex items-center justify-between z-10">
           <div>
-            <h1 className="text-display text-2xl font-bold tracking-tight">Badminton 64-Draw</h1>
+            <h1 className="text-display text-2xl font-bold tracking-tight">Atmiya Badminton 2026</h1>
             <p className="text-sm text-muted-foreground">Tournament Knockout Bracket • 64 Teams</p>
           </div>
-          <div className="flex gap-2">
-            <Badge variant="outline" className="rounded-full px-4 py-1">Live Bracket</Badge>
-            <Badge variant="outline" className="rounded-full px-4 py-1">Badminton Open 2026</Badge>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-auto bg-background/40">
-          <div className="p-8">
-            <SectionKnockout />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionHeader({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="paper rounded-2xl border p-5 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="text-display text-xl font-semibold">{title}</div>
-          <div className="mt-1 text-sm text-muted-foreground">{description}</div>
-        </div>
-        {action ? <div className="flex items-center gap-2">{action}</div> : null}
-      </div>
-    </div>
-  );
-}
-
-function SectionSports({
-  sports,
-  onCreate,
-}: {
-  sports: SportProfile[];
-  onCreate: () => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="Sport profiles"
-        description="Define scoring rules and stage templates. Each tournament inherits a sport profile."
-        action={
-          <Button data-testid="button-create-sport" className="h-10 rounded-xl" onClick={onCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            New sport
-          </Button>
-        }
-      />
-
-      {sports.length === 0 ? (
-        <EmptyState
-          title="No sports yet"
-          description="Create your first sport profile to start generating tournaments."
-          action={
-            <Button data-testid="button-create-sport-empty" className="h-10 rounded-xl" onClick={onCreate}>
-              Create sport
-            </Button>
-          }
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {sports.map((s) => (
-            <Card key={s.id} className="paper hover-elevate rounded-2xl border shadow-sm">
-              <div className="p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div data-testid={`text-sport-name-${s.id}`} className="text-base font-semibold">
-                      {s.name}
-                    </div>
-                    <div className="mt-1 text-sm text-muted-foreground">
-                      {s.playersPerTeam} players · {s.scoringType} · {s.winCondition}
-                    </div>
-                  </div>
-                  <Badge data-testid={`badge-sport-stages-${s.id}`} variant="secondary" className="rounded-full">
-                    {s.stagesConfig.join(" → ")}
-                  </Badge>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border bg-background/60 p-3">
-                    <div className="text-xs text-muted-foreground">Default group size</div>
-                    <div className="mt-1 text-sm font-medium">{s.defaultGroupSize || "—"}</div>
-                  </div>
-                  <div className="rounded-xl border bg-background/60 p-3">
-                    <div className="text-xs text-muted-foreground">Default knockout size</div>
-                    <div className="mt-1 text-sm font-medium">{s.defaultKnockoutSize || "—"}</div>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex items-center justify-between">
-                  <div className="text-xs text-muted-foreground">Template ready</div>
-                  <Button
-                    data-testid={`button-sport-open-${s.id}`}
-                    variant="secondary"
-                    className="h-9 rounded-xl"
-                  >
-                    Open
-                    <ChevronRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CreateSportDialog({
-  open,
-  onOpenChange,
-  sport,
-  setSport,
-  onCreate,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  sport: {
-    name: string;
-    playersPerTeam: number;
-    scoringType: SportProfile["scoringType"];
-    winCondition: SportProfile["winCondition"];
-    stagesConfig: StageType[];
-    defaultGroupSize: number;
-    defaultKnockoutSize: number;
-  };
-  setSport: React.Dispatch<
-    React.SetStateAction<{
-      name: string;
-      playersPerTeam: number;
-      scoringType: SportProfile["scoringType"];
-      winCondition: SportProfile["winCondition"];
-      stagesConfig: StageType[];
-      defaultGroupSize: number;
-      defaultKnockoutSize: number;
-    }>
-  >;
-  onCreate: () => void;
-}) {
-  const toggleStage = (t: StageType) => {
-    setSport((s) => {
-      const has = s.stagesConfig.includes(t);
-      const next = has ? s.stagesConfig.filter((x) => x !== t) : [...s.stagesConfig, t];
-      return { ...s, stagesConfig: next };
-    });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg rounded-2xl" data-testid="dialog-create-sport">
-        <DialogHeader>
-          <DialogTitle className="text-display">Create sport profile</DialogTitle>
-          <DialogDescription>
-            Define the rules once. Every tournament can inherit and override the stage flow.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="sport-name">Name</Label>
-            <Input
-              id="sport-name"
-              data-testid="input-sport-name"
-              value={sport.name}
-              onChange={(e) => setSport((s) => ({ ...s, name: e.target.value }))}
-              placeholder="e.g., Handball (Goals)"
-              className="h-10 rounded-xl"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="players-per-team">Players / team</Label>
-              <Input
-                id="players-per-team"
-                data-testid="input-sport-players"
-                type="number"
-                min={1}
-                value={sport.playersPerTeam}
-                onChange={(e) => setSport((s) => ({ ...s, playersPerTeam: Number(e.target.value || 0) }))}
-                className="h-10 rounded-xl"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Scoring type</Label>
-              <Select
-                value={sport.scoringType}
-                onValueChange={(v) => setSport((s) => ({ ...s, scoringType: v as any }))}
-              >
-                <SelectTrigger data-testid="select-sport-scoring" className="h-10 rounded-xl">
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem data-testid="option-scoring-points" value="points">
-                    Points
-                  </SelectItem>
-                  <SelectItem data-testid="option-scoring-goals" value="goals">
-                    Goals
-                  </SelectItem>
-                  <SelectItem data-testid="option-scoring-sets" value="sets">
-                    Sets
-                  </SelectItem>
-                  <SelectItem data-testid="option-scoring-custom" value="custom">
-                    Custom
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label>Win condition</Label>
-              <Select
-                value={sport.winCondition}
-                onValueChange={(v) => setSport((s) => ({ ...s, winCondition: v as any }))}
-              >
-                <SelectTrigger data-testid="select-sport-win" className="h-10 rounded-xl">
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem data-testid="option-win-higher" value="higherScore">
-                    Higher score
-                  </SelectItem>
-                  <SelectItem data-testid="option-win-sets" value="bestOfSets">
-                    Best of sets
-                  </SelectItem>
-                  <SelectItem data-testid="option-win-aggregate" value="aggregate">
-                    Aggregate
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label>Stage flow</Label>
-              <div className="flex flex-wrap gap-2">
-                {([
-                  { t: "GROUP" as const, label: "Group" },
-                  { t: "LEAGUE" as const, label: "League" },
-                  { t: "KNOCKOUT" as const, label: "Knockout" },
-                ] as const).map(({ t, label }) => {
-                  const on = sport.stagesConfig.includes(t);
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      data-testid={`toggle-stage-${t.toLowerCase()}`}
-                      onClick={() => toggleStage(t)}
-                      className={cn(
-                        "rounded-full border px-3 py-2 text-xs transition",
-                        on
-                          ? "bg-accent text-accent-foreground"
-                          : "bg-background text-muted-foreground hover:bg-accent/60",
-                      )}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="group-size">Default group size</Label>
-              <Input
-                id="group-size"
-                data-testid="input-sport-group-size"
-                type="number"
-                min={0}
-                value={sport.defaultGroupSize}
-                onChange={(e) => setSport((s) => ({ ...s, defaultGroupSize: Number(e.target.value || 0) }))}
-                className="h-10 rounded-xl"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="knockout-size">Default knockout size</Label>
-              <Input
-                id="knockout-size"
-                data-testid="input-sport-knockout-size"
-                type="number"
-                min={0}
-                value={sport.defaultKnockoutSize}
-                onChange={(e) => setSport((s) => ({ ...s, defaultKnockoutSize: Number(e.target.value || 0) }))}
-                className="h-10 rounded-xl"
-              />
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button
-            data-testid="button-create-sport-confirm"
-            className="h-10 rounded-xl"
-            onClick={onCreate}
-          >
-            Create sport
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function CreateTournamentDialog({
-  open,
-  onOpenChange,
-  sports,
-  onCreate,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  sports: SportProfile[];
-  onCreate: (payload: { name: string; sportId: string; teamCount: number }) => void;
-}) {
-  const [name, setName] = useState("");
-  const [sportId, setSportId] = useState(sports[0]?.id ?? "");
-  const [teamCount, setTeamCount] = useState(8);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg rounded-2xl" data-testid="dialog-create-tournament">
-        <DialogHeader>
-          <DialogTitle className="text-display">Create tournament</DialogTitle>
-          <DialogDescription>
-            Choose a sport profile. Stage flow will follow the sport template (in this mockup).
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="tournament-name">Name</Label>
-            <Input
-              id="tournament-name"
-              data-testid="input-tournament-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Winter Invitational"
-              className="h-10 rounded-xl"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label>Sport</Label>
-              <Select value={sportId} onValueChange={(v) => setSportId(v)}>
-                <SelectTrigger data-testid="select-tournament-sport" className="h-10 rounded-xl">
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sports.map((s) => (
-                    <SelectItem key={s.id} data-testid={`option-tournament-sport-${s.id}`} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="team-count">Teams</Label>
-              <Input
-                id="team-count"
-                data-testid="input-tournament-team-count"
-                type="number"
-                min={2}
-                value={teamCount}
-                onChange={(e) => setTeamCount(Number(e.target.value || 0))}
-                className="h-10 rounded-xl"
-              />
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button
-            data-testid="button-create-tournament-confirm"
-            className="h-10 rounded-xl"
-            onClick={() => onCreate({ name, sportId, teamCount })}
-          >
-            Create tournament
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function CreateTeamDialog({
-  open,
-  onOpenChange,
-  sports,
-  onCreate,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  sports: SportProfile[];
-  onCreate: (payload: { name: string; sportId: string; players: string[] }) => void;
-}) {
-  const [name, setName] = useState("");
-  const [sportId, setSportId] = useState(sports[0]?.id ?? "");
-  const [players, setPlayers] = useState("A. Player, B. Player, C. Player");
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg rounded-2xl" data-testid="dialog-create-team">
-        <DialogHeader>
-          <DialogTitle className="text-display">Create team</DialogTitle>
-          <DialogDescription>
-            Players are dynamic per sport (mocked as a comma-separated list here).
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="team-name">Team name</Label>
-            <Input
-              id="team-name"
-              data-testid="input-team-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Riverside"
-              className="h-10 rounded-xl"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label>Sport</Label>
-              <Select value={sportId} onValueChange={(v) => setSportId(v)}>
-                <SelectTrigger data-testid="select-team-sport" className="h-10 rounded-xl">
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sports.map((s) => (
-                    <SelectItem key={s.id} data-testid={`option-team-sport-${s.id}`} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label>Roster (comma-separated)</Label>
-              <Input
-                data-testid="input-team-players"
-                value={players}
-                onChange={(e) => setPlayers(e.target.value)}
-                className="h-10 rounded-xl"
-              />
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button
-            data-testid="button-create-team-confirm"
-            className="h-10 rounded-xl"
-            onClick={() =>
-              onCreate({
-                name,
-                sportId,
-                players: players
-                  .split(",")
-                  .map((p) => p.trim())
-                  .filter(Boolean),
-              })
-            }
-          >
-            Create team
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function SectionTournaments({
-  sports,
-  tournaments,
-  onCreate,
-}: {
-  sports: SportProfile[];
-  tournaments: Tournament[];
-  onCreate: () => void;
-}) {
-  const sportNameById = useMemo(() => {
-    return Object.fromEntries(sports.map((s) => [s.id, s.name] as const));
-  }, [sports]);
-
-  return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="Tournaments"
-        description="Create tournaments under a sport profile. (Stage generation is mocked in this UI.)"
-        action={
-          <Button data-testid="button-create-tournament" className="h-10 rounded-xl" onClick={onCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            New tournament
-          </Button>
-        }
-      />
-
-      {tournaments.length === 0 ? (
-        <EmptyState
-          title="No tournaments yet"
-          description="Create a tournament to generate groups, leagues, or brackets." 
-          action={
-            <Button data-testid="button-create-tournament-empty" className="h-10 rounded-xl" onClick={onCreate}>
-              Create tournament
-            </Button>
-          }
-        />
-      ) : (
-        <div className="space-y-3">
-          {tournaments.map((t) => (
-            <Card key={t.id} className="paper hover-elevate rounded-2xl border shadow-sm">
-              <div className="p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div data-testid={`text-tournament-name-${t.id}`} className="text-base font-semibold">
-                      {t.name}
-                    </div>
-                    <div className="mt-1 text-sm text-muted-foreground">
-                      {sportNameById[t.sportId] ?? "Unknown sport"} · {t.teamCount} teams
-                    </div>
-                  </div>
-
-                  <Badge
-                    data-testid={`status-tournament-${t.id}`}
-                    className={cn(
-                      "rounded-full",
-                      t.status === "RUNNING" && "bg-primary text-primary-foreground",
-                      t.status === "NOT_STARTED" && "bg-secondary text-secondary-foreground",
-                      t.status === "FINISHED" && "bg-accent text-accent-foreground",
-                    )}
-                    variant="secondary"
-                  >
-                    {t.status.replace("_", " ")}
-                  </Badge>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <Button data-testid={`button-tournament-generate-${t.id}`} variant="secondary" className="h-9 rounded-xl">
-                    Generate stages
-                  </Button>
-                  <Button data-testid={`button-tournament-reset-${t.id}`} variant="secondary" className="h-9 rounded-xl">
-                    Reset
-                  </Button>
-                  <Button data-testid={`button-tournament-open-${t.id}`} className="h-9 rounded-xl">
-                    Open
-                    <ChevronRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SectionTeams({
-  sports,
-  teams,
-  onCreate,
-}: {
-  sports: SportProfile[];
-  teams: Team[];
-  onCreate: () => void;
-}) {
-  const sportNameById = useMemo(() => {
-    return Object.fromEntries(sports.map((s) => [s.id, s.name] as const));
-  }, [sports]);
-
-  return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="Teams"
-        description="Manage rosters. In a real build, the number of players per team can be enforced per sport." 
-        action={
-          <Button data-testid="button-create-team" className="h-10 rounded-xl" onClick={onCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            New team
-          </Button>
-        }
-      />
-
-      {teams.length === 0 ? (
-        <EmptyState
-          title="No teams yet"
-          description="Add teams to start filling tournaments." 
-          action={
-            <Button data-testid="button-create-team-empty" className="h-10 rounded-xl" onClick={onCreate}>
-              Create team
-            </Button>
-          }
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {teams.map((t) => (
-            <Card key={t.id} className="paper hover-elevate rounded-2xl border shadow-sm">
-              <div className="p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div data-testid={`text-team-name-${t.id}`} className="text-base font-semibold">
-                      {t.name}
-                    </div>
-                    <div className="mt-1 text-sm text-muted-foreground">
-                      {sportNameById[t.sportId] ?? "Unknown sport"}
-                    </div>
-                  </div>
-                  <Badge data-testid={`badge-team-size-${t.id}`} variant="secondary" className="rounded-full">
-                    {t.players.length} players
-                  </Badge>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {t.players.slice(0, 6).map((p, idx) => (
-                    <span
-                      key={p}
-                      data-testid={`text-team-player-${t.id}-${idx}`}
-                      className="rounded-full border bg-background px-2.5 py-1 text-xs text-muted-foreground"
-                    >
-                      {p}
-                    </span>
-                  ))}
-                  {t.players.length > 6 ? (
-                    <span className="rounded-full border bg-background px-2.5 py-1 text-xs text-muted-foreground">
-                      +{t.players.length - 6}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SectionMatches({
-  sports,
-  teams,
-  tournaments,
-  matches,
-  setMatches,
-}: {
-  sports: SportProfile[];
-  teams: Team[];
-  tournaments: Tournament[];
-  matches: Match[];
-  setMatches: React.Dispatch<React.SetStateAction<Match[]>>;
-}) {
-  const [selectedTournamentId, setSelectedTournamentId] = useState(tournaments[0]?.id ?? "");
-  const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
-
-  const tournamentById = useMemo(() => Object.fromEntries(tournaments.map((t) => [t.id, t] as const)), [tournaments]);
-  const sportById = useMemo(() => Object.fromEntries(sports.map((s) => [s.id, s] as const)), [sports]);
-  const teamById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t] as const)), [teams]);
-
-  const list = useMemo(() => {
-    const q = selectedTournamentId;
-    return matches.filter((m) => m.tournamentId === q);
-  }, [matches, selectedTournamentId]);
-
-  const selectedTournament = tournamentById[selectedTournamentId];
-  const selectedSport = selectedTournament ? sportById[selectedTournament.sportId] : undefined;
-
-  return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="Matches"
-        description="Click a match to enter results. Standings update instantly in this prototype." 
-        action={
           <div className="flex items-center gap-2">
-            <Select value={selectedTournamentId} onValueChange={setSelectedTournamentId}>
-              <SelectTrigger data-testid="select-matches-tournament" className="h-10 w-[260px] rounded-xl">
-                <SelectValue placeholder="Select tournament" />
-              </SelectTrigger>
-              <SelectContent>
-                {tournaments.map((t) => (
-                  <SelectItem key={t.id} data-testid={`option-matches-tournament-${t.id}`} value={t.id}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button data-testid="button-generate-matches" variant="secondary" className="h-10 rounded-xl">
-              Generate
+            <Link href="/admin">
+              <Button variant="outline" className="rounded-full">
+                <Settings className="h-4 w-4 mr-2" />
+                Admin
+              </Button>
+            </Link>
+            <Button variant="outline" className="rounded-full" onClick={() => setEditRound1Open(true)}>
+              <Pencil className="h-4 w-4 mr-2" />
+              Edit Round 1 Teams
+            </Button>
+            <Button variant="outline" className="rounded-full" onClick={handleKnockoutUndo}>
+              <Undo2 className="h-4 w-4 mr-2" />
+              Undo
+            </Button>
+            <Button variant="outline" className="rounded-full" onClick={handleKnockoutReset}>
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Reset
             </Button>
           </div>
-        }
-      />
+        </div>
 
-      {list.length === 0 ? (
-        <EmptyState
-          title="No matches for this tournament"
-          description="Generate a schedule or create matches manually (mocked)." 
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-3">
-          {list.map((m) => {
-            const t1 = teamById[m.team1Id]?.name ?? "TBD";
-            const t2 = teamById[m.team2Id]?.name ?? "TBD";
-            const hasScore = m.score1 !== null && m.score2 !== null;
-            const winner = hasScore ? (m.score1! > m.score2! ? "team1" : m.score2! > m.score1! ? "team2" : "draw") : "tbd";
-
-            return (
-              <button
-                key={m.id}
-                type="button"
-                data-testid={`card-match-${m.id}`}
-                onClick={() => setSelectedMatch(m)}
-                className={cn(
-                  "paper hover-elevate w-full rounded-2xl border text-left shadow-sm transition",
-                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                )}
-              >
-                <div className="p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Badge data-testid={`badge-match-round-${m.id}`} variant="secondary" className="rounded-full">
-                        {m.roundLabel}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">Stage {m.stageIndex + 1}</span>
-                    </div>
-                    <span
-                      data-testid={`status-match-${m.id}`}
-                      className={cn(
-                        "text-xs",
-                        hasScore ? "text-foreground" : "text-muted-foreground",
+        <Dialog open={editRound1Open} onOpenChange={setEditRound1Open}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle>Edit Round 1 Team Numbers</DialogTitle>
+              <DialogDescription>
+                Enter a number from 1 to 64 for each slot. Only numbers allowed; no duplicates; max 64. Left bracket: Team 1–32, Right bracket: Team 33–64.
+              </DialogDescription>
+            </DialogHeader>
+            {(() => {
+              const { valid, duplicateSlots, nonNumericSlots, overMaxSlots } = getRound1Validation(round1TeamNumbers);
+              const duplicateSet = new Set(duplicateSlots);
+              const nonNumericSet = new Set(nonNumericSlots);
+              const overMaxSet = new Set(overMaxSlots);
+              return (
+                <>
+                  {!valid && (
+                    <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {nonNumericSet.size > 0 && (
+                        <span>Only numbers allowed in Team(s): {Array.from(nonNumericSet).sort((a, b) => a - b).join(", ")}. </span>
                       )}
-                    >
-                      {hasScore ? "Played" : "Not played"}
-                    </span>
+                      {overMaxSet.size > 0 && (
+                        <span>Max 64 allowed. Invalid in Team(s): {Array.from(overMaxSet).sort((a, b) => a - b).join(", ")}. </span>
+                      )}
+                      {duplicateSet.size > 0 && (
+                        <span>No duplicate numbers. Duplicates in Team(s): {Array.from(duplicateSet).sort((a, b) => a - b).join(", ")}.</span>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex-1 overflow-y-auto space-y-4 py-4">
+                    <div className="text-xs font-medium text-muted-foreground px-1">Left bracket (Team 1–32)</div>
+                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                      {round1TeamNumbers.slice(0, 32).map((num, i) => {
+                        const slot = i + 1;
+                        const isDuplicate = duplicateSet.has(slot);
+                        const isNonNumeric = nonNumericSet.has(slot);
+                        const isOverMax = overMaxSet.has(slot);
+                        const hasError = isDuplicate || isNonNumeric || isOverMax;
+                        return (
+                          <div key={i} className="flex flex-col gap-1">
+                            <Label className="text-xs text-muted-foreground">Team {slot}</Label>
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              value={num}
+                              onChange={(e) => {
+                                const next = [...round1TeamNumbers];
+                                next[i] = onlyDigits(e.target.value);
+                                setRound1TeamNumbers(next);
+                              }}
+                              className={cn("h-9 text-sm", hasError && "border-destructive focus-visible:ring-destructive")}
+                              placeholder={String(slot)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <Separator className="my-2" />
+                    <div className="text-xs font-medium text-muted-foreground px-1">Right bracket (Team 33–64)</div>
+                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                      {round1TeamNumbers.slice(32, 64).map((num, i) => {
+                        const slot = i + 33;
+                        const isDuplicate = duplicateSet.has(slot);
+                        const isNonNumeric = nonNumericSet.has(slot);
+                        const isOverMax = overMaxSet.has(slot);
+                        const hasError = isDuplicate || isNonNumeric || isOverMax;
+                        return (
+                          <div key={i + 32} className="flex flex-col gap-1">
+                            <Label className="text-xs text-muted-foreground">Team {slot}</Label>
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              value={num}
+                              onChange={(e) => {
+                                const next = [...round1TeamNumbers];
+                                next[i + 32] = onlyDigits(e.target.value);
+                                setRound1TeamNumbers(next);
+                              }}
+                              className={cn("h-9 text-sm", hasError && "border-destructive focus-visible:ring-destructive")}
+                              placeholder={String(slot)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setRound1TeamNumbers(DEFAULT_ROUND1_TEAM_NUMBERS)}>
+                      Reset to default
+                    </Button>
+                    <Button onClick={() => setEditRound1Open(false)} disabled={!valid}>
+                      Done
+                    </Button>
+                  </DialogFooter>
+                </>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
 
-                  <div className="mt-4 grid grid-cols-12 items-center gap-3">
-                    <div className={cn("col-span-5 truncate text-sm font-medium", winner === "team1" && "text-primary")}>
-                      {t1}
-                    </div>
-                    <div className="col-span-2 text-center text-sm text-muted-foreground">vs</div>
-                    <div className={cn("col-span-5 truncate text-right text-sm font-medium", winner === "team2" && "text-primary")}>
-                      {t2}
-                    </div>
-
-                    <div className="col-span-12 mt-2 flex items-center justify-between">
-                      <div className="text-xs text-muted-foreground">Tap to enter {selectedSport?.scoringType ?? "score"}</div>
-                      <div className="flex items-center gap-2">
-                        <span data-testid={`text-score-${m.id}`} className="text-sm font-semibold tabular-nums">
-                          {m.score1 ?? "–"} : {m.score2 ?? "–"}
-                        </span>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+        <div className="flex-1 overflow-y-auto bg-background/40">
+          <SectionKnockout
+            matchResults={knockoutState.results}
+            onPick={handleKnockoutPick}
+            round1TeamNumbers={round1TeamNumbers}
+            championPlayerNames={championPlayerNames}
+            setChampionPlayerNames={setChampionPlayerNames}
+          />
         </div>
-      )}
-
-      <MatchResultDialog
-        open={!!selectedMatch}
-        onOpenChange={(v) => !v && setSelectedMatch(null)}
-        match={selectedMatch}
-        teamById={useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t] as const)), [teams])}
-        sport={selectedSport}
-        onSave={(next) => {
-          setMatches((prev) => prev.map((m) => (m.id === next.id ? next : m)));
-          setSelectedMatch(null);
-        }}
-      />
+      </div>
     </div>
   );
 }
 
-function MatchResultDialog({
-  open,
-  onOpenChange,
-  match,
-  teamById,
-  sport,
-  onSave,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  match: Match | null;
-  teamById: Record<string, Team>;
-  sport?: SportProfile;
-  onSave: (m: Match) => void;
-}) {
-  const [s1, setS1] = useState<string>("");
-  const [s2, setS2] = useState<string>("");
-
-  const title = sport?.scoringType === "sets" ? "Enter sets" : "Enter score";
-
-  const team1 = match ? teamById[match.team1Id]?.name ?? "TBD" : "";
-  const team2 = match ? teamById[match.team2Id]?.name ?? "TBD" : "";
+// Celebration component with looping animation
+function CelebrationAnimation() {
+  const particles = Array.from({ length: 50 }).map((_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+    delay: Math.random() * 2,
+    duration: 2 + Math.random() * 2,
+  }));
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg rounded-2xl" data-testid="dialog-match-result">
-        <DialogHeader>
-          <DialogTitle className="text-display">{title}</DialogTitle>
-          <DialogDescription>
-            {match ? `${team1} vs ${team2} · ${match.roundLabel}` : ""}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl border bg-background/60 p-3">
-              <div className="text-xs text-muted-foreground">Team 1</div>
-              <div className="mt-1 text-sm font-semibold" data-testid="text-match-team1">
-                {team1}
-              </div>
-            </div>
-            <div className="rounded-xl border bg-background/60 p-3">
-              <div className="text-xs text-muted-foreground">Team 2</div>
-              <div className="mt-1 text-sm font-semibold" data-testid="text-match-team2">
-                {team2}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="score1">{sport?.scoringType ?? "score"} 1</Label>
-              <Input
-                id="score1"
-                data-testid="input-match-score1"
-                inputMode="numeric"
-                value={s1}
-                onChange={(e) => setS1(e.target.value)}
-                className="h-10 rounded-xl"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="score2">{sport?.scoringType ?? "score"} 2</Label>
-              <Input
-                id="score2"
-                data-testid="input-match-score2"
-                inputMode="numeric"
-                value={s2}
-                onChange={(e) => setS2(e.target.value)}
-                className="h-10 rounded-xl"
-              />
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button
-            data-testid="button-save-match-result"
-            className="h-10 rounded-xl"
-            onClick={() => {
-              if (!match) return;
-              const n1 = s1.trim() === "" ? null : Number(s1);
-              const n2 = s2.trim() === "" ? null : Number(s2);
-              onSave({ ...match, score1: Number.isFinite(n1 as any) ? (n1 as any) : null, score2: Number.isFinite(n2 as any) ? (n2 as any) : null });
-              setS1("");
-              setS2("");
-            }}
-          >
-            Save result
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function SectionStandings({
-  sports,
-  tournaments,
-  teams,
-  matches,
-}: {
-  sports: SportProfile[];
-  tournaments: Tournament[];
-  teams: Team[];
-  matches: Match[];
-}) {
-  const [selectedTournamentId, setSelectedTournamentId] = useState(tournaments[0]?.id ?? "");
-
-  const tournament = tournaments.find((t) => t.id === selectedTournamentId);
-  const sport = tournament ? sports.find((s) => s.id === tournament.sportId) : undefined;
-
-  const teamById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t] as const)), [teams]);
-
-  const stats = useMemo(() => {
-    const rows: Record<
-      string,
-      { id: string; name: string; played: number; wins: number; draws: number; losses: number; scored: number; conceded: number }
-    > = {};
-
-    const rel = matches.filter((m) => m.tournamentId === selectedTournamentId);
-
-    for (const m of rel) {
-      if (m.score1 === null || m.score2 === null) continue;
-      const a = m.team1Id;
-      const b = m.team2Id;
-
-      rows[a] ??= {
-        id: a,
-        name: teamById[a]?.name ?? "TBD",
-        played: 0,
-        wins: 0,
-        draws: 0,
-        losses: 0,
-        scored: 0,
-        conceded: 0,
-      };
-      rows[b] ??= {
-        id: b,
-        name: teamById[b]?.name ?? "TBD",
-        played: 0,
-        wins: 0,
-        draws: 0,
-        losses: 0,
-        scored: 0,
-        conceded: 0,
-      };
-
-      rows[a].played += 1;
-      rows[b].played += 1;
-      rows[a].scored += m.score1;
-      rows[a].conceded += m.score2;
-      rows[b].scored += m.score2;
-      rows[b].conceded += m.score1;
-
-      if (m.score1 > m.score2) {
-        rows[a].wins += 1;
-        rows[b].losses += 1;
-      } else if (m.score2 > m.score1) {
-        rows[b].wins += 1;
-        rows[a].losses += 1;
-      } else {
-        rows[a].draws += 1;
-        rows[b].draws += 1;
-      }
-    }
-
-    const arr = Object.values(rows).map((r) => ({
-      ...r,
-      diff: r.scored - r.conceded,
-      points: r.wins * 3 + r.draws,
-    }));
-
-    arr.sort((x, y) => {
-      if (y.points !== x.points) return y.points - x.points;
-      if (y.diff !== x.diff) return y.diff - x.diff;
-      if (y.scored !== x.scored) return y.scored - x.scored;
-      return x.name.localeCompare(y.name);
-    });
-
-    return arr;
-  }, [matches, selectedTournamentId, teamById]);
-
-  return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="Standings"
-        description="Simple ranking: wins → score diff → scored. (Per-sport ranking rules can be added later.)"
-        action={
-          <Select value={selectedTournamentId} onValueChange={setSelectedTournamentId}>
-            <SelectTrigger data-testid="select-standings-tournament" className="h-10 w-[260px] rounded-xl">
-              <SelectValue placeholder="Select tournament" />
-            </SelectTrigger>
-            <SelectContent>
-              {tournaments.map((t) => (
-                <SelectItem key={t.id} data-testid={`option-standings-tournament-${t.id}`} value={t.id}>
-                  {t.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
-      />
-
-      <Card className="paper rounded-2xl border shadow-sm">
-        <div className="p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-sm font-semibold" data-testid="text-standings-title">
-                {tournament?.name ?? "Standings"}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {sport?.name ?? ""}
-              </div>
-            </div>
-            <Badge variant="secondary" className="rounded-full" data-testid="badge-standings-rule">
-              W-D-L · diff · points
-            </Badge>
-          </div>
-
-          <div className="mt-4 overflow-hidden rounded-xl border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[44px]">#</TableHead>
-                  <TableHead>Team</TableHead>
-                  <TableHead className="text-right">P</TableHead>
-                  <TableHead className="text-right">W</TableHead>
-                  <TableHead className="text-right">D</TableHead>
-                  <TableHead className="text-right">L</TableHead>
-                  <TableHead className="text-right">+/-</TableHead>
-                  <TableHead className="text-right">Pts</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {stats.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
-                      No results yet—enter match scores to populate standings.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  stats.map((r, idx) => (
-                    <TableRow key={r.id} data-testid={`row-standings-${r.id}`}>
-                      <TableCell className="font-medium tabular-nums">{idx + 1}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="h-2 w-2 rounded-full bg-primary" />
-                          <span className="font-medium">{r.name}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{r.played}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.wins}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.draws}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.losses}</TableCell>
-                      <TableCell className={cn("text-right tabular-nums", r.diff > 0 ? "text-emerald-600" : r.diff < 0 ? "text-rose-600" : "text-muted-foreground")}>
-                        {r.diff > 0 ? `+${r.diff}` : `${r.diff}`}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums">{r.points}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
-      </Card>
+    <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
+      {particles.map((particle) => (
+        <motion.div
+          key={particle.id}
+          className="absolute w-2 h-2 rounded-full"
+          style={{
+            left: `${particle.x}%`,
+            top: `${particle.y}%`,
+            background: ['#FFD700', '#FFA500', '#FF6B6B', '#4ECDC4', '#45B7D1'][Math.floor(Math.random() * 5)],
+            boxShadow: '0 0 10px currentColor',
+          }}
+          animate={{
+            y: [0, -100, 0],
+            x: [0, (Math.random() - 0.5) * 50, 0],
+            opacity: [0, 1, 0.8, 0],
+            scale: [0, 1.2, 0.8, 0],
+          }}
+          transition={{
+            duration: particle.duration,
+            delay: particle.delay,
+            repeat: Infinity,
+            ease: "easeOut",
+          }}
+        />
+      ))}
+      {Array.from({ length: 20 }).map((_, i) => (
+        <motion.div
+          key={`sparkle-${i}`}
+          className="absolute w-1 h-1 rounded-full"
+          style={{
+            left: `${Math.random() * 100}%`,
+            top: `${Math.random() * 100}%`,
+            background: '#FFD700',
+            boxShadow: '0 0 8px #FFD700',
+          }}
+          animate={{
+            scale: [0, 1.5, 0],
+            opacity: [0, 1, 0],
+          }}
+          transition={{
+            duration: 1.5,
+            delay: Math.random() * 2,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+        />
+      ))}
     </div>
   );
 }
 
-function SectionKnockout() {
-  const rounds = [
-    {
-      name: "Round of 64",
-      matches: Array.from({ length: 32 }).map((_, i) => ({
-        id: `r64-${i}`,
-        a: `Seed ${i * 2 + 1}`,
-        b: `Seed ${i * 2 + 2}`,
-        score: "—",
-      })),
-    },
-    {
-      name: "Round of 32",
-      matches: Array.from({ length: 16 }).map((_, i) => ({
-        id: `r32-${i}`,
-        a: `Winner M${i * 2 + 1}`,
-        b: `Winner M${i * 2 + 2}`,
-        score: "—",
-      })),
-    },
-    {
-      name: "Round of 16",
-      matches: Array.from({ length: 8 }).map((_, i) => ({
-        id: `r16-${i}`,
-        a: `Winner R32-${i * 2 + 1}`,
-        b: `Winner R32-${i * 2 + 2}`,
-        score: "—",
-      })),
-    },
-    {
-      name: "Quarterfinals",
-      matches: [
-        { id: "q1", a: "Winner R16-1", b: "Winner R16-2", score: "—" },
-        { id: "q2", a: "Winner R16-3", b: "Winner R16-4", score: "—" },
-        { id: "q3", a: "Winner R16-5", b: "Winner R16-6", score: "—" },
-        { id: "q4", a: "Winner R16-7", b: "Winner R16-8", score: "—" },
-      ],
-    },
-    {
-      name: "Semifinals",
-      matches: [
-        { id: "s1", a: "Winner Q1", b: "Winner Q2", score: "—" },
-        { id: "s2", a: "Winner Q3", b: "Winner Q4", score: "—" },
-      ],
-    },
-    {
-      name: "Final",
-      matches: [{ id: "f", a: "Winner S1", b: "Winner S2", score: "—" }],
-    },
+function SectionKnockout({
+  matchResults,
+  onPick,
+  round1TeamNumbers,
+  championPlayerNames,
+  setChampionPlayerNames,
+}: {
+  matchResults: KnockoutMatchResults;
+  onPick: (matchId: string, winner: string, score?: string) => void;
+  round1TeamNumbers: string[];
+  championPlayerNames: { player1: string; player2: string };
+  setChampionPlayerNames: React.Dispatch<React.SetStateAction<{ player1: string; player2: string }>>;
+}) {
+  // Create 64 teams - 32 on left, 32 on right (display "Team {number}" in bracket; edit dialog uses numbers only)
+  const leftNums = round1TeamNumbers.slice(0, 32);
+  const rightNums = round1TeamNumbers.slice(32, 64);
+  const leftTeams = leftNums.map((num, i) => ({
+    id: `left-${i + 1}`,
+    name: `Team ${num.trim() ? num : String(i + 1)}`,
+    seed: i + 1,
+  }));
+  const rightTeams = rightNums.map((num, i) => ({
+    id: `right-${i + 1}`,
+    name: `Team ${num.trim() ? num : String(i + 33)}`,
+    seed: i + 33,
+  }));
+
+  // Keep existing local name used throughout render helpers
+  const handleMatchResult = onPick;
+
+  // Left/right Round 1 pairings (team numbers 1–64, court) – same order as bracket; defined in @/lib/bracketAdmin
+  // Validate: every team 1–64 appears exactly once across left + right Round 1 (no repeats, no missing)
+  const leftTeamNums = LEFT_ROUND1_PAIRINGS.flatMap(([a, b]) => [a, b]);
+  const rightTeamNums = RIGHT_ROUND1_PAIRINGS.flatMap(([a, b]) => [a, b]);
+  const allTeamNums = [...leftTeamNums, ...rightTeamNums];
+  const expected = new Set(Array.from({ length: 64 }, (_, i) => i + 1));
+  const seen = new Set(allTeamNums);
+  const duplicates = allTeamNums.filter((n) => {
+    const first = allTeamNums.indexOf(n);
+    return allTeamNums.indexOf(n, first + 1) !== -1;
+  });
+  const missing = Array.from(expected).filter((n: number) => !seen.has(n));
+  if (duplicates.length > 0 || missing.length > 0) {
+    console.error(
+      "[Round 1 pairings] Each team 1–64 must appear exactly once. Duplicates:",
+      Array.from(new Set(duplicates)),
+      "Missing:",
+      missing,
+    );
+  }
+
+  const getTeamByNumber = (num: number): { id: string; name: string; seed: number } => {
+    if (num >= 1 && num <= 32) return leftTeams[num - 1];
+    if (num >= 33 && num <= 64) return rightTeams[num - 33];
+    return leftTeams[0]; // fallback
+  };
+
+  // Build match pairs for Round 1 (left side) from pairings data with court numbers
+  const leftRound1Matches = LEFT_ROUND1_PAIRINGS.map(([a, b, court], i) => ({
+    id: `left-r1-${i}`,
+    team1: getTeamByNumber(a),
+    team2: getTeamByNumber(b),
+    side: 'left' as const,
+    courtNumber: court,
+  }));
+
+  // Build match pairs for Round 1 (right side) from pairings data with court numbers
+  const rightRound1Matches = RIGHT_ROUND1_PAIRINGS.map(([a, b, court], i) => ({
+    id: `right-r1-${i}`,
+    team1: getTeamByNumber(a),
+    team2: getTeamByNumber(b),
+    side: 'right' as const,
+    courtNumber: court,
+  }));
+
+  // Get winners for Round 1
+  const getRound1Winners = (matches: Array<{ id: string; team1: { id: string; name: string }; team2: { id: string; name: string }; side: string }>) => {
+    return matches.map(match => {
+      const result = matchResults[match.id];
+      if (!result) return null;
+      // Get the actual team name from the winner ID
+      const winnerTeam = match.team1.id === result.winner ? match.team1 : match.team2;
+      return { matchId: match.id, winner: winnerTeam.name, winnerId: result.winner };
+    }).filter(Boolean) as Array<{ matchId: string; winner: string; winnerId: string }>;
+  };
+
+  const leftRound1Winners = getRound1Winners(leftRound1Matches);
+  const rightRound1Winners = getRound1Winners(rightRound1Matches);
+
+  // Round 2 pairings: [r1GameA, r1GameB, court] – e.g. winner of game 2 & 3 play on court 1, game 5 & 6 on court 2
+  const LEFT_ROUND2_PAIRINGS: [number, number, number][] = [
+    [0, 1, 3],   // R2 match 0: winner game 0 vs game 1, court 3
+    [2, 3, 1],   // R2 match 1: winner game 2 vs game 3 → court 1
+    [5, 6, 2],   // R2 match 2: winner game 5 vs game 6 → court 2
+    [4, 7, 4],   // R2 match 3: winner game 4 vs game 7, court 4
+    [8, 9, 5],
+    [10, 11, 6],
+    [12, 13, 7],
+    [14, 15, 8],
+  ];
+  const RIGHT_ROUND2_PAIRINGS: [number, number, number][] = [
+    [0, 1, 3],
+    [2, 3, 1],   // winner game 2 vs game 3 → court 1
+    [5, 6, 2],   // winner game 5 vs game 6 → court 2
+    [4, 7, 4],
+    [8, 9, 5],
+    [10, 11, 6],
+    [12, 13, 7],
+    [14, 15, 8],
   ];
 
-  return (
-    <div className="min-w-[1600px] h-full flex flex-col">
-      <div className="flex gap-8 h-full">
-        {rounds.map((r) => (
-          <div key={r.name} className="flex-1 flex flex-col">
-            <div className="mb-6 text-center">
-              <span className="px-4 py-1 rounded-full bg-accent text-accent-foreground text-[10px] font-bold uppercase tracking-widest border border-accent-border">
-                {r.name}
-              </span>
-            </div>
-            <div
-              className={cn(
-                "flex flex-col flex-1 justify-around gap-4 pb-8",
-                r.name === "Round of 64" ? "space-y-1" : ""
-              )}
-            >
-              {r.matches.map((m) => (
-                <div
-                  key={m.id}
-                  data-testid={`card-bracket-${m.id}`}
-                  className="group relative rounded-xl border bg-card/80 p-3 shadow-sm transition hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 duration-200"
-                >
-                  <div className="flex items-center justify-between text-[11px] mb-1.5">
-                    <div className="flex items-center gap-2 truncate">
-                      <div className="w-1 h-3 rounded-full bg-muted group-hover:bg-primary transition-colors" />
-                      <span className="font-semibold truncate">{m.a}</span>
-                    </div>
-                    <span className="text-muted-foreground font-mono bg-muted/30 px-1.5 rounded">{m.score}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-border/50">
-                    <div className="flex items-center gap-2 truncate">
-                      <div className="w-1 h-3 rounded-full bg-muted group-hover:bg-primary/60 transition-colors" />
-                      <span className="font-semibold truncate">{m.b}</span>
-                    </div>
-                    <span className="text-muted-foreground font-mono bg-muted/30 px-1.5 rounded">{m.score}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+  // Round 2 matches (from Round 1 winners) – built from pairings above
+  const leftRound2Matches = LEFT_ROUND2_PAIRINGS.map(([match1Index, match2Index, court], i) => {
+    const match1 = leftRound1Matches[match1Index];
+    const match2 = leftRound1Matches[match2Index];
+    const match1Result = match1 ? matchResults[match1.id] : null;
+    const match2Result = match2 ? matchResults[match2.id] : null;
+    const team1Name = match1Result ? (match1Result.winner === match1.team1.id ? match1.team1.name : match1.team2.name) : 'TBD';
+    const team2Name = match2Result ? (match2Result.winner === match2.team1.id ? match2.team1.name : match2.team2.name) : 'TBD';
+    return {
+      id: `left-r2-${i}`,
+      team1: team1Name,
+      team2: team2Name,
+      team1Id: match1Result?.winner || `r2-left-${i}-t1`,
+      team2Id: match2Result?.winner || `r2-left-${i}-t2`,
+      side: 'left' as const,
+      match1Id: match1?.id,
+      match2Id: match2?.id,
+      courtNumber: court,
+    };
+  });
+
+  const rightRound2Matches = RIGHT_ROUND2_PAIRINGS.map(([match1Index, match2Index, court], i) => {
+    const match1 = rightRound1Matches[match1Index];
+    const match2 = rightRound1Matches[match2Index];
+    const match1Result = match1 ? matchResults[match1.id] : null;
+    const match2Result = match2 ? matchResults[match2.id] : null;
+    const team1Name = match1Result ? (match1Result.winner === match1.team1.id ? match1.team1.name : match1.team2.name) : 'TBD';
+    const team2Name = match2Result ? (match2Result.winner === match2.team1.id ? match2.team1.name : match2.team2.name) : 'TBD';
+    return {
+      id: `right-r2-${i}`,
+      team1: team1Name,
+      team2: team2Name,
+      team1Id: match1Result?.winner || `r2-right-${i}-t1`,
+      team2Id: match2Result?.winner || `r2-right-${i}-t2`,
+      side: 'right' as const,
+      match1Id: match1?.id,
+      match2Id: match2?.id,
+      courtNumber: court,
+    };
+  });
+
+  // Check if team is a winner
+  const isWinner = (matchId: string, teamId: string) => {
+    return matchResults[matchId]?.winner === teamId;
+  };
+
+  // Calculate Round 2 winners
+  const leftRound2Winners = leftRound2Matches.map(match => {
+    const result = matchResults[match.id];
+    return result ? result.winner : null;
+  }).filter(Boolean);
+
+  const rightRound2Winners = rightRound2Matches.map(match => {
+    const result = matchResults[match.id];
+    return result ? result.winner : null;
+  }).filter(Boolean);
+
+  // Get Round 2 winners with names
+  const getRound2Winners = (matches: Array<{ id: string; team1: string; team2: string; team1Id: string; team2Id: string; side: string }>) => {
+    return matches.map(match => {
+      const result = matchResults[match.id];
+      if (!result) return null;
+      // Find which team won by comparing IDs
+      const winnerName = result.winner === match.team1Id ? match.team1 : match.team2;
+      return { matchId: match.id, winner: winnerName, winnerId: result.winner };
+    }).filter(Boolean) as Array<{ matchId: string; winner: string; winnerId: string }>;
+  };
+
+  const leftRound2WinnersWithNames = getRound2Winners(leftRound2Matches);
+  const rightRound2WinnersWithNames = getRound2Winners(rightRound2Matches);
+
+  // Round 3 matches (from Round 2 winners) - Show teams as they advance
+  const leftRound3Matches = Array.from({ length: 4 }).map((_, i) => {
+    const match1Index = i * 2;
+    const match2Index = i * 2 + 1;
+    const match1 = leftRound2Matches[match1Index];
+    const match2 = leftRound2Matches[match2Index];
+    
+    // Check Round 2 results directly
+    const match1Result = match1 ? matchResults[match1.id] : null;
+    const match2Result = match2 ? matchResults[match2.id] : null;
+    
+    // Get team names from Round 2 winners
+    const team1Name = match1Result ? (match1Result.winner === match1.team1Id ? match1.team1 : match1.team2) : 'TBD';
+    const team2Name = match2Result ? (match2Result.winner === match2.team1Id ? match2.team1 : match2.team2) : 'TBD';
+    
+    return {
+      id: `left-r3-${i}`,
+      team1: team1Name,
+      team2: team2Name,
+      team1Id: match1Result?.winner || `r3-left-${i}-t1`,
+      team2Id: match2Result?.winner || `r3-left-${i}-t2`,
+      side: 'left' as const,
+      match1Id: match1?.id,
+      match2Id: match2?.id,
+    };
+  });
+
+  const rightRound3Matches = Array.from({ length: 4 }).map((_, i) => {
+    const match1Index = i * 2;
+    const match2Index = i * 2 + 1;
+    const match1 = rightRound2Matches[match1Index];
+    const match2 = rightRound2Matches[match2Index];
+    
+    // Check Round 2 results directly
+    const match1Result = match1 ? matchResults[match1.id] : null;
+    const match2Result = match2 ? matchResults[match2.id] : null;
+    
+    // Get team names from Round 2 winners
+    const team1Name = match1Result ? (match1Result.winner === match1.team1Id ? match1.team1 : match1.team2) : 'TBD';
+    const team2Name = match2Result ? (match2Result.winner === match2.team1Id ? match2.team1 : match2.team2) : 'TBD';
+    
+    return {
+      id: `right-r3-${i}`,
+      team1: team1Name,
+      team2: team2Name,
+      team1Id: match1Result?.winner || `r3-right-${i}-t1`,
+      team2Id: match2Result?.winner || `r3-right-${i}-t2`,
+      side: 'right' as const,
+      match1Id: match1?.id,
+      match2Id: match2?.id,
+    };
+  });
+
+  // Get Round 3 winners with names
+  const getRound3Winners = (matches: Array<{ id: string; team1: string; team2: string; team1Id: string; team2Id: string; side: string }>) => {
+    return matches.map(match => {
+      const result = matchResults[match.id];
+      if (!result) return null;
+      const winnerName = result.winner === match.team1Id ? match.team1 : match.team2;
+      return { matchId: match.id, winner: winnerName, winnerId: result.winner };
+    }).filter(Boolean) as Array<{ matchId: string; winner: string; winnerId: string }>;
+  };
+
+  const leftRound3WinnersWithNames = getRound3Winners(leftRound3Matches);
+  const rightRound3WinnersWithNames = getRound3Winners(rightRound3Matches);
+
+  // Quarterfinals (from Round 3 winners) - Show teams as they advance
+  const leftQuarterfinalMatches = Array.from({ length: 2 }).map((_, i) => {
+    const match1Index = i * 2;
+    const match2Index = i * 2 + 1;
+    const match1 = leftRound3Matches[match1Index];
+    const match2 = leftRound3Matches[match2Index];
+    
+    // Check Round 3 results directly
+    const match1Result = match1 ? matchResults[match1.id] : null;
+    const match2Result = match2 ? matchResults[match2.id] : null;
+    
+    // Get team names from Round 3 winners
+    const team1Name = match1Result ? (match1Result.winner === match1.team1Id ? match1.team1 : match1.team2) : 'TBD';
+    const team2Name = match2Result ? (match2Result.winner === match2.team1Id ? match2.team1 : match2.team2) : 'TBD';
+    
+    return {
+      id: `left-qf-${i}`,
+      team1: team1Name,
+      team2: team2Name,
+      team1Id: match1Result?.winner || `qf-left-${i}-t1`,
+      team2Id: match2Result?.winner || `qf-left-${i}-t2`,
+      match1Id: match1?.id,
+      match2Id: match2?.id,
+    };
+  });
+
+  const rightQuarterfinalMatches = Array.from({ length: 2 }).map((_, i) => {
+    const match1Index = i * 2;
+    const match2Index = i * 2 + 1;
+    const match1 = rightRound3Matches[match1Index];
+    const match2 = rightRound3Matches[match2Index];
+    
+    // Check Round 3 results directly
+    const match1Result = match1 ? matchResults[match1.id] : null;
+    const match2Result = match2 ? matchResults[match2.id] : null;
+    
+    // Get team names from Round 3 winners
+    const team1Name = match1Result ? (match1Result.winner === match1.team1Id ? match1.team1 : match1.team2) : 'TBD';
+    const team2Name = match2Result ? (match2Result.winner === match2.team1Id ? match2.team1 : match2.team2) : 'TBD';
+    
+    return {
+      id: `right-qf-${i}`,
+      team1: team1Name,
+      team2: team2Name,
+      team1Id: match1Result?.winner || `qf-right-${i}-t1`,
+      team2Id: match2Result?.winner || `qf-right-${i}-t2`,
+      match1Id: match1?.id,
+      match2Id: match2?.id,
+    };
+  });
+
+  // Get Quarterfinal winners
+  const leftQFWinners = leftQuarterfinalMatches.map(match => {
+    const result = matchResults[match.id];
+    if (!result) return null;
+    const winnerName = result.winner === match.team1Id ? match.team1 : match.team2;
+    return { winner: winnerName, winnerId: result.winner };
+  }).filter(Boolean) as Array<{ winner: string; winnerId: string }>;
+
+  const rightQFWinners = rightQuarterfinalMatches.map(match => {
+    const result = matchResults[match.id];
+    if (!result) return null;
+    const winnerName = result.winner === match.team1Id ? match.team1 : match.team2;
+    return { winner: winnerName, winnerId: result.winner };
+  }).filter(Boolean) as Array<{ winner: string; winnerId: string }>;
+
+  // Semifinals (from Quarterfinals) - Show teams as they advance
+  const qfMatch1 = leftQuarterfinalMatches[0];
+  const qfMatch2 = leftQuarterfinalMatches[1];
+  const qfMatch1Result = qfMatch1 ? matchResults[qfMatch1.id] : null;
+  const qfMatch2Result = qfMatch2 ? matchResults[qfMatch2.id] : null;
+  const leftSemifinalTeam1 = qfMatch1Result ? (qfMatch1Result.winner === qfMatch1.team1Id ? qfMatch1.team1 : qfMatch1.team2) : 'TBD';
+  const leftSemifinalTeam2 = qfMatch2Result ? (qfMatch2Result.winner === qfMatch2.team1Id ? qfMatch2.team1 : qfMatch2.team2) : 'TBD';
+  const leftSemifinal = (leftSemifinalTeam1 !== 'TBD' || leftSemifinalTeam2 !== 'TBD') ? {
+    id: 'left-sf',
+    team1: leftSemifinalTeam1,
+    team2: leftSemifinalTeam2,
+    team1Id: qfMatch1Result?.winner || 'left-sf-t1',
+    team2Id: qfMatch2Result?.winner || 'left-sf-t2',
+  } : null;
+
+  const rightQfMatch1 = rightQuarterfinalMatches[0];
+  const rightQfMatch2 = rightQuarterfinalMatches[1];
+  const rightQfMatch1Result = rightQfMatch1 ? matchResults[rightQfMatch1.id] : null;
+  const rightQfMatch2Result = rightQfMatch2 ? matchResults[rightQfMatch2.id] : null;
+  const rightSemifinalTeam1 = rightQfMatch1Result ? (rightQfMatch1Result.winner === rightQfMatch1.team1Id ? rightQfMatch1.team1 : rightQfMatch1.team2) : 'TBD';
+  const rightSemifinalTeam2 = rightQfMatch2Result ? (rightQfMatch2Result.winner === rightQfMatch2.team1Id ? rightQfMatch2.team1 : rightQfMatch2.team2) : 'TBD';
+  const rightSemifinal = (rightSemifinalTeam1 !== 'TBD' || rightSemifinalTeam2 !== 'TBD') ? {
+    id: 'right-sf',
+    team1: rightSemifinalTeam1,
+    team2: rightSemifinalTeam2,
+    team1Id: rightQfMatch1Result?.winner || 'right-sf-t1',
+    team2Id: rightQfMatch2Result?.winner || 'right-sf-t2',
+  } : null;
+
+  // Get Semifinal winners
+  const leftSFWinner = leftSemifinal && matchResults[leftSemifinal.id] ? {
+    winner: matchResults[leftSemifinal.id].winner === leftSemifinal.team1Id ? leftSemifinal.team1 : leftSemifinal.team2,
+    winnerId: matchResults[leftSemifinal.id].winner,
+  } : null;
+
+  const rightSFWinner = rightSemifinal && matchResults[rightSemifinal.id] ? {
+    winner: matchResults[rightSemifinal.id].winner === rightSemifinal.team1Id ? rightSemifinal.team1 : rightSemifinal.team2,
+    winnerId: matchResults[rightSemifinal.id].winner,
+  } : null;
+
+  // Final - Show teams as they advance
+  const leftSFResult = leftSemifinal ? matchResults[leftSemifinal.id] : null;
+  const rightSFResult = rightSemifinal ? matchResults[rightSemifinal.id] : null;
+  const finalTeam1 = (leftSemifinal && leftSFResult)
+    ? (leftSFResult.winner === leftSemifinal.team1Id ? leftSemifinal.team1 : leftSemifinal.team2)
+    : 'TBD';
+  const finalTeam2 = (rightSemifinal && rightSFResult)
+    ? (rightSFResult.winner === rightSemifinal.team1Id ? rightSemifinal.team1 : rightSemifinal.team2)
+    : 'TBD';
+  const finalMatch = (finalTeam1 !== 'TBD' || finalTeam2 !== 'TBD') ? {
+    id: 'final',
+    team1: finalTeam1,
+    team2: finalTeam2,
+    team1Id: leftSFResult?.winner || 'final-t1',
+    team2Id: rightSFResult?.winner || 'final-t2',
+  } : null;
+
+  type BracketSide = "left" | "right";
+  type BracketTheme = "primary" | "accent";
+
+  type TeamSlot = {
+    name: string;
+    id: string;
+    advanced: boolean;
+  };
+
+  type DisplayMatch = {
+    id: string;
+    team1: TeamSlot;
+    team2: TeamSlot;
+  };
+
+  const ROUND_HEADER_CLASS = "text-[10px] font-bold text-[#a489fa] mb-2 text-center uppercase";
+
+  // Check if champion is selected
+  const champion = matchResults.final && finalMatch 
+    ? (matchResults.final.winner === finalMatch.team1Id ? finalMatch.team1 : finalMatch.team2)
+    : null;
+  
+  // Display: use number from name if present (e.g. "Team 1" or "5"), else show full name
+  const championDisplayNumber = champion ? (champion.match(/\d+/)?.[0] ?? champion) : null;
+
+  // The two players on the winning team (each team has two players)
+  const hasWinningPlayers =
+    (championPlayerNames.player1.trim() || championPlayerNames.player2.trim()) !== "";
+  const winningPlayersLabel =
+    hasWinningPlayers &&
+    [championPlayerNames.player1.trim(), championPlayerNames.player2.trim()].filter(Boolean).join(" & ");
+
+  const getArrowChar = (side: BracketSide) => (side === "left" ? "→" : "←");
+
+  const getThemeToken = (theme: BracketTheme) => (theme === "primary" ? "--primary" : "--accent");
+
+  const getThemeRowClasses = (
+    theme: BracketTheme,
+    highlightHex?: string,
+    unselectedTextWhite?: boolean,
+  ) => {
+    // IMPORTANT: Tailwind can't reliably generate CSS for classes built dynamically like
+    // `bg-[${highlightHex}]/10`. So when highlightHex is provided, we use a CSS variable
+    // (`--round`) and keep the class strings static.
+    if (highlightHex) {
+      return {
+        arrow: "text-[color:var(--round)]",
+        score: "text-[color:var(--round)]",
+        // 10% fill + subtle ring, plus hover brighten
+        winnerRow:
+          "text-[color:var(--round)] bg-[color:var(--round)]/10 ring-1 ring-[color:var(--round)]/30 hover:bg-[color:var(--round)]/12 hover:ring-[color:var(--round)]/45",
+        // Hover any team name: show same-color highlight at 10% opacity and shift text to round color
+        advancedRow:
+          unselectedTextWhite
+            ? "text-foreground hover:text-[color:var(--round)] hover:bg-[color:var(--round)]/10"
+            : "text-[color:var(--round)]/90 hover:text-[color:var(--round)] hover:bg-[color:var(--round)]/10",
+        neutralRow:
+          "text-foreground hover:text-[color:var(--round)] hover:bg-[color:var(--round)]/10",
+      };
+    }
+
+    if (theme === "primary") {
+      return {
+        arrow: "text-primary",
+        score: "text-primary",
+        winnerRow: "text-primary bg-primary/10",
+        advancedRow: "text-primary/80 hover:bg-primary/5",
+        // used in round 1 where non-winners should stay neutral/foreground
+        neutralRow: "text-foreground hover:bg-primary/5",
+      };
+    }
+
+    return {
+      arrow: "text-accent",
+      score: "text-accent",
+      winnerRow: "text-accent bg-accent/10",
+      advancedRow: "text-accent/90 hover:bg-accent/8",
+      neutralRow: "text-foreground hover:bg-accent/8",
+    };
+  };
+
+  const toRound1DisplayMatches = (matches: Array<{ id: string; team1: { id: string; name: string }; team2: { id: string; name: string } }>): DisplayMatch[] =>
+    matches.map((m) => ({
+      id: m.id,
+      team1: { name: m.team1.name, id: m.team1.id, advanced: true },
+      team2: { name: m.team2.name, id: m.team2.id, advanced: true },
+    }));
+
+  const toNextRoundDisplayMatches = (matches: Array<{ id: string; team1: string; team2: string; team1Id: string; team2Id: string }>): DisplayMatch[] =>
+    matches.map((m) => ({
+      id: m.id,
+      team1: { name: m.team1, id: m.team1Id, advanced: m.team1 !== "TBD" },
+      team2: { name: m.team2, id: m.team2Id, advanced: m.team2 !== "TBD" },
+    }));
+
+  const TOTAL_COURTS = 8;
+
+  // Unique colors per court (1–8), visible on dark background
+  const COURT_COLORS: string[] = [
+    "#22d3ee", // Court 1 – cyan
+    "#4ade80", // Court 2 – lime
+    "#fb923c", // Court 3 – orange
+    "#f472b6", // Court 4 – pink
+    "#facc15", // Court 5 – yellow/amber
+    "#38bdf8", // Court 6 – sky blue
+    "#a78bfa", // Court 7 – violet
+    "#34d399", // Court 8 – emerald
+  ];
+
+  const renderMatchBox = (opts: {
+    match: DisplayMatch;
+    side: BracketSide;
+    theme: BracketTheme;
+    highlightHex?: string;
+    unselectedTextWhite?: boolean;
+    cardClassName: string;
+    teamTextClassName: string;
+    showArrow: boolean;
+    scoreOnPick: string;
+    inactiveStyle: "neutral" | "advanced";
+    borderWhenResult?: number;
+    borderWhenAnyTeam?: number;
+    courtNumber: number;
+  }) => {
+    const {
+      match,
+      side,
+      theme,
+      highlightHex,
+      unselectedTextWhite,
+      cardClassName,
+      teamTextClassName,
+      showArrow,
+      scoreOnPick,
+      inactiveStyle,
+      borderWhenResult,
+      borderWhenAnyTeam,
+      courtNumber,
+    } = opts;
+
+    const result = matchResults[match.id];
+    const team1Winner = result?.winner === match.team1.id;
+    const team2Winner = result?.winner === match.team2.id;
+    const anyTeam = match.team1.advanced || match.team2.advanced;
+
+    const themeToken = getThemeToken(theme);
+    const themeClasses = getThemeRowClasses(theme, highlightHex, unselectedTextWhite);
+    const arrowChar = getArrowChar(side);
+
+    const roundStyle = highlightHex ? ({ ["--round" as any]: highlightHex } as React.CSSProperties) : undefined;
+
+    const computedBorderColor = result
+      ? borderWhenResult !== undefined
+        ? `hsl(var(${themeToken}) / ${borderWhenResult})`
+        : undefined
+      : borderWhenAnyTeam !== undefined && anyTeam
+        ? `hsl(var(${themeToken}) / ${borderWhenAnyTeam})`
+        : undefined;
+
+    const getRowClass = (winner: boolean, advanced: boolean) => {
+      const base = `${teamTextClassName} font-semibold truncate flex items-center gap-1 cursor-pointer py-0.5 px-1 -mx-1 rounded transition-colors`;
+      if (winner) return `${base} ${themeClasses.winnerRow}`;
+      if (!advanced) return `${base} text-muted-foreground`;
+      return `${base} ${inactiveStyle === "neutral" ? themeClasses.neutralRow : themeClasses.advancedRow}`;
+    };
+
+    return (
+      <div
+        key={match.id}
+        className={cardClassName}
+        style={{
+          background: "hsl(var(--card) / 0.6)",
+          borderColor: computedBorderColor,
+        }}
+      >
+        <div
+          className="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-medium mb-0.5 mx-auto"
+          style={{
+            color: COURT_COLORS[(courtNumber - 1) % COURT_COLORS.length],
+            backgroundColor: `${COURT_COLORS[(courtNumber - 1) % COURT_COLORS.length]}20`,
+          }}
+          hidden
+        >
+          Court {courtNumber}
+        </div>
+        <div
+          className={getRowClass(team1Winner, match.team1.advanced)}
+          style={roundStyle}
+          onClick={() => {
+            if (!match.team1.advanced) return;
+            handleMatchResult(match.id, match.team1.id, scoreOnPick);
+          }}
+        >
+          {showArrow && match.team1.advanced && <span className={themeClasses.arrow}>{arrowChar}</span>}
+          {match.team1.name}
+          {team1Winner && " ✓"}
+        </div>
+        <div className="text-[9px] text-muted-foreground mb-0.5 text-center">vs</div>
+        <div
+          className={getRowClass(team2Winner, match.team2.advanced)}
+          style={roundStyle}
+          onClick={() => {
+            if (!match.team2.advanced) return;
+            handleMatchResult(match.id, match.team2.id, scoreOnPick);
+          }}
+        >
+          {showArrow && match.team2.advanced && <span className={themeClasses.arrow}>{arrowChar}</span>}
+          {match.team2.name}
+          {team2Winner && " ✓"}
+        </div>
+        {result?.score && (
+          <div className={`text-[9px] ${themeClasses.score} font-mono mt-1 text-center`} style={roundStyle}>
+            {result.score}
           </div>
-        ))}
+        )}
       </div>
-    </div>
-  );
-}
+    );
+  };
 
-function SectionStages({ sport }: { sport?: SportProfile }) {
-  const stageLabels = sport?.stagesConfig ?? ["GROUP", "KNOCKOUT"];
+  const renderRoundColumn = (opts: {
+    title: string;
+    side: BracketSide;
+    theme: BracketTheme;
+    matches: DisplayMatch[];
+    highlightHex?: string;
+    unselectedTextWhite?: boolean;
+    cardClassName: string;
+    teamTextClassName: string;
+    showArrow: boolean;
+    scoreOnPick: string;
+    inactiveStyle: "neutral" | "advanced";
+    borderWhenResult?: number;
+    borderWhenAnyTeam?: number;
+    columnClassName?: string;
+    headerClassName?: string;
+    courtNumbers?: number[];
+    /** Insert a small vertical gap after this match index (e.g. 7 = gap between 8th and 9th match on left Round 1). */
+    insertGapAfterIndex?: number;
+  }) => {
+    const {
+      title,
+      side,
+      theme,
+      matches,
+      highlightHex,
+      unselectedTextWhite,
+      cardClassName,
+      teamTextClassName,
+      showArrow,
+      scoreOnPick,
+      inactiveStyle,
+      borderWhenResult,
+      borderWhenAnyTeam,
+      columnClassName,
+      headerClassName,
+      courtNumbers,
+      insertGapAfterIndex,
+    } = opts;
+
+    return (
+      <div className={columnClassName ?? "flex flex-col justify-around gap-1 h-full min-w-[100px]"}>
+        <div 
+          className={headerClassName ?? ROUND_HEADER_CLASS}
+          style={{ fontFamily: 'Montserrat, sans-serif' }}
+        >
+          {title}
+        </div>
+        {matches.map((m, i) => {
+          // Keep existing behavior: don't render future matches until someone advances,
+          // except Round 1 where everyone is always "advanced".
+          const hasAnyTeam = m.team1.advanced || m.team2.advanced;
+          const result = matchResults[m.id];
+          if (inactiveStyle === "advanced" && !hasAnyTeam && !result) return null;
+
+          const courtNumber = courtNumbers?.[i] ?? (i % TOTAL_COURTS) + 1;
+          const box = renderMatchBox({
+            match: m,
+            side,
+            theme,
+            highlightHex,
+            unselectedTextWhite,
+            cardClassName,
+            teamTextClassName,
+            showArrow,
+            scoreOnPick,
+            inactiveStyle,
+            borderWhenResult,
+            borderWhenAnyTeam,
+            courtNumber,
+          });
+          const showGap = insertGapAfterIndex !== undefined && i === insertGapAfterIndex;
+          return (
+            <React.Fragment key={m.id}>
+              {box}
+              {showGap && <div className="h-3 flex-shrink-0" aria-hidden="true" />}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="Stages"
-        description="Stage generator preview based on the selected sport profile (mock)."
-        action={
-          <Button data-testid="button-stage-generate" className="h-10 rounded-xl">
-            Generate stages
-          </Button>
-        }
-      />
+    <div className="w-full h-full flex flex-col relative" style={{ minHeight: '100%' }}>
+      {champion && <CelebrationAnimation />}
+      {champion && (
+        <div className="absolute top-80 left-1/2 transform -translate-x-1/2 z-50 text-center">
+          <motion.div
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5, type: "spring" }}
+            className="flex flex-col items-center gap-2"
+          >
+            <motion.div
+              animate={{ 
+                scale: [1, 1.1, 1],
+                rotate: [0, 5, -5, 0]
+              }}
+              transition={{ 
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+            >
+              <Crown 
+                className="h-12 w-12"
+                style={{
+                  color: '#FFD700',
+                  fill: '#FFD700',
+                }}
+              />
+            </motion.div>
+            <motion.div
+              className="text-[32px] md:text-[48px] font-bold uppercase "
+              style={{
+                fontFamily: 'Montserrat, sans-serif',
+                background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FFD700 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+                textShadow: '0 0 30px rgba(255, 215, 0, 0.5)',
+              }}
+              animate={{
+                scale: [1, 1.05, 1],
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+            >
+              CHAMPION: {champion}
+              {hasWinningPlayers && (
+                <div className="text-lg md:text-xl mt-1 font-normal" style={{ fontFamily: "Montserrat, sans-serif" }}>
+                  {winningPlayersLabel}
+                </div>
+              )}
+              
+            </motion.div>
+          </motion.div>
+        </div>
+      )}
 
-      <Card className="paper rounded-2xl border shadow-sm">
-        <div className="p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-sm font-semibold" data-testid="text-stage-template-title">
-                Template
+      <div className="flex-1 flex items-center justify-around gap-4 px-4 relative" style={{ paddingTop: champion ? '100px' : '40px', paddingBottom: '40px' }}>
+        
+        {renderRoundColumn({
+          title: "ROUND 1",
+          side: "left",
+          theme: "primary",
+          matches: toRound1DisplayMatches(leftRound1Matches),
+          highlightHex: "#a489fa",
+          cardClassName: "rounded border p-1.5 shadow-sm bg-card border-border min-w-[90px] transition-all hover:border-primary/60 hover:shadow-md",
+          teamTextClassName: "text-[12px]",
+          showArrow: false,
+          scoreOnPick: "2-1",
+          inactiveStyle: "neutral",
+          borderWhenResult: 0.5,
+          courtNumbers: leftRound1Matches.map((m) => m.courtNumber),
+          insertGapAfterIndex: 7, // small separation between 29–36 and 3–62
+        })}
+
+        {leftRound1Winners.length > 0 && renderRoundColumn({
+          title: "ROUND 2",
+          side: "left",
+          theme: "primary",
+          matches: toNextRoundDisplayMatches(leftRound2Matches),
+          highlightHex: "#e3766f",
+          unselectedTextWhite: true,
+          cardClassName: "rounded border p-1.5 shadow-sm bg-card border-primary/30 min-w-[90px] transition-all hover:border-primary/60",
+          teamTextClassName: "text-[12px]",
+          showArrow: true,
+          scoreOnPick: "2-0",
+          inactiveStyle: "advanced",
+          borderWhenResult: 0.5,
+          borderWhenAnyTeam: 0.3,
+          headerClassName: "text-[10px] font-bold text-[#e3766f] mb-2 text-center uppercase",
+          courtNumbers: leftRound2Matches.map((m) => m.courtNumber),
+        })}
+
+        {leftRound2Winners.length > 0 && renderRoundColumn({
+          title: "ROUND 3",
+          side: "left",
+          theme: "primary",
+          matches: toNextRoundDisplayMatches(leftRound3Matches),
+          highlightHex: "#b59ffe",
+          unselectedTextWhite: true,
+          cardClassName: "rounded border p-1.5 shadow-sm bg-card border-primary/30 min-w-[90px] transition-all hover:border-primary/60",
+          teamTextClassName: "text-[12px]",
+          showArrow: true,
+          scoreOnPick: "2-0",
+          inactiveStyle: "advanced",
+          borderWhenResult: 0.5,
+          borderWhenAnyTeam: 0.3,
+          columnClassName: "flex flex-col justify-around gap-1.5 h-full min-w-[100px]",
+          headerClassName: "text-[10px] font-bold text-[#b59ffe] mb-2 text-center uppercase",
+        })}
+
+        {leftRound3WinnersWithNames.length > 0 && renderRoundColumn({
+          title: "QUARTERFINALS",
+          side: "left",
+          theme: "accent",
+          matches: toNextRoundDisplayMatches(leftQuarterfinalMatches),
+          highlightHex: "#f5ffb1",
+          unselectedTextWhite: true,
+          cardClassName: "rounded border p-2 shadow-sm bg-card border-accent/50 min-w-[100px] transition-all hover:border-accent/70",
+          teamTextClassName: "text-[13px]",
+          showArrow: true,
+          scoreOnPick: "2-0",
+          inactiveStyle: "advanced",
+          borderWhenResult: 0.7,
+          borderWhenAnyTeam: 0.5,
+          columnClassName: "flex flex-col justify-around gap-2 h-full min-w-[100px]",
+          headerClassName: "text-[10px] font-bold text-[#f5ffb1] mb-2 text-center uppercase",
+        })}
+
+        {leftSemifinal && renderRoundColumn({
+          title: "SEMIFINALS",
+          side: "left",
+          theme: "accent",
+          matches: toNextRoundDisplayMatches([leftSemifinal]),
+          highlightHex: "#f57f0b",
+          unselectedTextWhite: true,
+          cardClassName: "rounded border p-2 shadow-sm bg-card border-accent/50 min-w-[100px] transition-all hover:border-accent/70",
+          teamTextClassName: "text-[13px]",
+          showArrow: true,
+          scoreOnPick: "2-0",
+          inactiveStyle: "advanced",
+          borderWhenResult: 0.7,
+          borderWhenAnyTeam: 0.5,
+          columnClassName: "flex flex-col justify-around gap-3 h-full min-w-[100px]",
+          headerClassName: "text-[10px] font-bold text-[#f57f0b] mb-2 text-center uppercase",
+        })}
+
+        <div className={cn("w-px self-stretch min-h-[240px] bg-primary/40 shrink-0 rounded-full transition-opacity", champion && "opacity-0")} aria-hidden />
+
+        {finalMatch && (
+          <div className="flex flex-col items-center justify-center min-w-[140px]" style={{ zIndex: 20 } as React.CSSProperties}>
+            <div className="text-center">
+              <div className="flex flex-col items-center mb-2">
+                <Crown 
+                  className="h-6 w-6 mb-1"
+                  style={{
+                    color: '#FFD700',
+                    fill: '#FFD700',
+                  }}
+                />
+                <div 
+                  className="text-[12px] font-bold uppercase"
+                  style={{
+                    fontFamily: 'Montserrat, sans-serif',
+                    background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FFD700 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                  }}
+                >
+                  CHAMPION
+                </div>
               </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {sport?.name ?? "No sport selected"}
+              <div
+                className="p-[2px] shadow-lg min-w-[120px] overflow-hidden"
+                style={{
+                  borderRadius: '0.5rem',
+                  background: matchResults.final 
+                    ? 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FFD700 100%)'
+                    : (finalMatch.team1 !== 'TBD' || finalMatch.team2 !== 'TBD')
+                    ? 'linear-gradient(135deg, rgba(255, 215, 0, 0.7) 0%, rgba(255, 165, 0, 0.7) 50%, rgba(255, 215, 0, 0.7) 100%)'
+                    : 'transparent',
+                }}
+              >
+                <div 
+                  className="p-3 min-w-[116px]"
+                  style={{ borderRadius: 'calc(0.5rem - 2px)', background: 'hsl(var(--card) / 0.6)' }}
+                >
+                {matchResults.final ? (
+                  <div className="text-[13px] font-bold space-y-1">
+                    <div
+                      className={matchResults.final.winner === finalMatch.team1Id
+                        ? "flex items-center justify-center gap-1 rounded px-2 py-1 bg-amber-500/20 ring-1 ring-amber-500/50 text-foreground"
+                        : "flex items-center justify-center text-muted-foreground"}
+                    >
+                      {matchResults.final.winner === finalMatch.team1Id && <span className="text-amber-600">→</span>}
+                      {finalMatch.team1}
+                      {matchResults.final.winner === finalMatch.team1Id && <span className="text-amber-600 text-[10px]">★</span>}
+                    </div>
+                    <div className="text-[9px] text-muted-foreground text-center">vs</div>
+                    <div
+                      className={matchResults.final.winner === finalMatch.team2Id
+                        ? "flex items-center justify-center gap-1 rounded px-2 py-1 bg-amber-500/20 ring-1 ring-amber-500/50 text-foreground"
+                        : "flex items-center justify-center text-muted-foreground"}
+                    >
+                      {matchResults.final.winner === finalMatch.team2Id && <span className="text-amber-600">←</span>}
+                      {finalMatch.team2}
+                      {matchResults.final.winner === finalMatch.team2Id && <span className="text-amber-600 text-[10px]">★</span>}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[13px] font-bold">
+                    <div 
+                      className={`flex items-center justify-center gap-1 cursor-pointer py-1 px-2 -mx-2 rounded transition-colors ${finalMatch.team1 !== 'TBD' ? 'hover:bg-gradient-to-r hover:from-[#FFD700]/10 hover:to-[#FFA500]/10' : 'text-muted-foreground'}`}
+                      style={finalMatch.team1 !== 'TBD' ? {
+                        background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.9) 0%, rgba(255, 165, 0, 0.9) 50%, rgba(255, 215, 0, 0.9) 100%)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text',
+                      } : undefined}
+                      onClick={() => {
+                        if (finalMatch.team1 === 'TBD') return;
+                        handleMatchResult('final', finalMatch.team1Id, '2-1');
+                      }}
+                    >
+                      {finalMatch.team1 !== 'TBD' && (
+                        <span style={{
+                          background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FFD700 100%)',
+                          WebkitBackgroundClip: 'text',
+                          WebkitTextFillColor: 'transparent',
+                          backgroundClip: 'text',
+                        }}>→</span>
+                      )}
+                      {finalMatch.team1}
+                    </div>
+                    <div className="text-[9px] text-muted-foreground my-1">vs</div>
+                    <div 
+                      className={`flex items-center justify-center gap-1 cursor-pointer py-1 px-2 -mx-2 rounded transition-colors ${finalMatch.team2 !== 'TBD' ? 'hover:bg-gradient-to-r hover:from-[#FFD700]/10 hover:to-[#FFA500]/10' : 'text-muted-foreground'}`}
+                      style={finalMatch.team2 !== 'TBD' ? {
+                        background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.9) 0%, rgba(255, 165, 0, 0.9) 50%, rgba(255, 215, 0, 0.9) 100%)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text',
+                      } : undefined}
+                      onClick={() => {
+                        if (finalMatch.team2 === 'TBD') return;
+                        handleMatchResult('final', finalMatch.team2Id, '2-1');
+                      }}
+                    >
+                      {finalMatch.team2}
+                      {finalMatch.team2 !== 'TBD' && (
+                        <span style={{
+                          background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FFD700 100%)',
+                          WebkitBackgroundClip: 'text',
+                          WebkitTextFillColor: 'transparent',
+                          backgroundClip: 'text',
+                        }}>←</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                </div>
               </div>
             </div>
-            <Badge data-testid="badge-stage-flow" variant="secondary" className="rounded-full">
-              {stageLabels.join(" → ")}
-            </Badge>
           </div>
+        )}
 
-          <div className="mt-4 grid grid-cols-1 gap-3">
-            {stageLabels.map((s, idx) => (
-              <div
-                key={`${s}-${idx}`}
-                data-testid={`card-stage-${idx}`}
-                className="rounded-2xl border bg-background/60 p-4 shadow-xs"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold">Stage {idx + 1}</div>
-                  <Badge variant="secondary" className="rounded-full">
-                    {s}
-                  </Badge>
-                </div>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  {s === "GROUP" ? "Generate groups + fixtures" : s === "LEAGUE" ? "Generate round-robin schedule" : "Generate bracket rounds"}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
-}
+        <div className={cn("w-px self-stretch min-h-[240px] bg-primary/40 shrink-0 rounded-full transition-opacity", champion && "opacity-0")} aria-hidden />
 
-function SectionSettings() {
-  return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="Settings"
-        description="Prototype preferences. In a real build, you could manage ranking rules per sport and permissions." 
-      />
+        {rightSemifinal && renderRoundColumn({
+          title: "SEMIFINALS",
+          side: "right",
+          theme: "accent",
+          matches: toNextRoundDisplayMatches([rightSemifinal]),
+          highlightHex: "#f57f0b",
+          unselectedTextWhite: true,
+          cardClassName: "rounded border p-2 shadow-sm bg-card border-accent/50 min-w-[100px] transition-all hover:border-accent/70 ",
+          teamTextClassName: "text-[13px]",
+          showArrow: true,
+          scoreOnPick: "2-0",
+          inactiveStyle: "advanced",
+          borderWhenResult: 0.7,
+          borderWhenAnyTeam: 0.5,
+          columnClassName: "flex flex-col justify-around gap-3 h-full min-w-[100px]",
+          headerClassName: "text-[10px] font-bold text-[#f57f0b] mb-2 text-center uppercase",
+        })}
 
-      <Card className="paper rounded-2xl border shadow-sm">
-        <div className="p-5">
-          <Tabs defaultValue="ui">
-            <TabsList className="rounded-xl" data-testid="tabs-settings">
-              <TabsTrigger value="ui" data-testid="tab-settings-ui">
-                UI
-              </TabsTrigger>
-              <TabsTrigger value="rules" data-testid="tab-settings-rules">
-                Rules
-              </TabsTrigger>
-              <TabsTrigger value="about" data-testid="tab-settings-about">
-                About
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="ui" className="mt-4">
-              <div className="grid gap-3">
-                <div className="rounded-2xl border bg-background/60 p-4">
-                  <div className="text-sm font-semibold">Theme</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    Light-first with a calm paper texture. (Dark mode tokens included.)
-                  </div>
-                </div>
-                <div className="rounded-2xl border bg-background/60 p-4">
-                  <div className="text-sm font-semibold">Motion</div>
-                  <div className="mt-1 text-sm text-muted-foreground">Subtle transitions and gentle page fades.</div>
-                </div>
-              </div>
-            </TabsContent>
-            <TabsContent value="rules" className="mt-4">
-              <div className="rounded-2xl border bg-background/60 p-4">
-                <div className="text-sm font-semibold">Ranking order</div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  Wins → score difference → points scored (mock). Customize per sport in the next iteration.
-                </div>
-              </div>
-            </TabsContent>
-            <TabsContent value="about" className="mt-4">
-              <div className="rounded-2xl border bg-background/60 p-4">
-                <div className="text-sm font-semibold">About this mockup</div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  Frontend-only prototype for a configurable multi-sport tournament platform.
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </div>
-      </Card>
+        {rightRound3WinnersWithNames.length > 0 && renderRoundColumn({
+          title: "QUARTERFINALS",
+          side: "right",
+          theme: "accent",
+          matches: toNextRoundDisplayMatches(rightQuarterfinalMatches),
+          highlightHex: "#f5ffb1",
+          unselectedTextWhite: true,
+          cardClassName: "rounded border p-2 shadow-sm bg-card border-accent/50 min-w-[100px] transition-all hover:border-accent/70",
+          teamTextClassName: "text-[13px]",
+          showArrow: true,
+          scoreOnPick: "2-0",
+          inactiveStyle: "advanced",
+          borderWhenResult: 0.7,
+          borderWhenAnyTeam: 0.5,
+          columnClassName: "flex flex-col justify-around gap-2 h-full min-w-[100px]",
+          headerClassName: "text-[10px] font-bold text-[#f5ffb1] mb-2 text-center uppercase",
+        })}
+
+        {rightRound2Winners.length > 0 && renderRoundColumn({
+          title: "ROUND 3",
+          side: "right",
+          theme: "primary",
+          matches: toNextRoundDisplayMatches(rightRound3Matches),
+          highlightHex: "#b59ffe",
+          unselectedTextWhite: true,
+          cardClassName: "rounded border p-1.5 shadow-sm bg-card border-primary/30 min-w-[90px] transition-all hover:border-primary/60",
+          teamTextClassName: "text-[12px]",
+          showArrow: true,
+          scoreOnPick: "2-0",
+          inactiveStyle: "advanced",
+          borderWhenResult: 0.5,
+          borderWhenAnyTeam: 0.3,
+          columnClassName: "flex flex-col justify-around gap-1.5 h-full min-w-[100px]",
+          headerClassName: "text-[10px] font-bold text-[#b59ffe] mb-2 text-center uppercase",
+        })}
+
+        {rightRound1Winners.length > 0 && renderRoundColumn({
+          title: "ROUND 2",
+          side: "right",
+          theme: "primary",
+          matches: toNextRoundDisplayMatches(rightRound2Matches),
+          highlightHex: "#e3766f",
+          unselectedTextWhite: true,
+          cardClassName: "rounded border p-1.5 shadow-sm bg-card border-primary/30 min-w-[90px] transition-all hover:border-primary/60",
+          teamTextClassName: "text-[12px]",
+          showArrow: true,
+          scoreOnPick: "2-0",
+          inactiveStyle: "advanced",
+          borderWhenResult: 0.5,
+          borderWhenAnyTeam: 0.3,
+          headerClassName: "text-[10px] font-bold text-[#e3766f] mb-2 text-center uppercase",
+        })}
+
+        {renderRoundColumn({
+          title: "ROUND 1",
+          side: "right",
+          theme: "primary",
+          matches: toRound1DisplayMatches(rightRound1Matches),
+          highlightHex: "#a489fa",
+          cardClassName: "rounded border p-1.5 shadow-sm bg-card border-border min-w-[90px] transition-all hover:border-primary/60 hover:shadow-md",
+          teamTextClassName: "text-[12px]",
+          showArrow: false,
+          scoreOnPick: "2-1",
+          inactiveStyle: "neutral",
+          borderWhenResult: 0.5,
+          courtNumbers: rightRound1Matches.map((m) => m.courtNumber),
+          insertGapAfterIndex: 7, // small separation between 30–35 and 2–63 (same as left)
+        })}
+      </div>
     </div>
   );
 }

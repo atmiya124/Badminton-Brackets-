@@ -155,49 +155,50 @@
   --elevate-1: rgba(255, 255, 255, 0.05);
   --elevate-2: rgba(255, 255, 255, 0.09);
 
-  --background: 225 22% 8%;
-  --foreground: 210 40% 98%;
+  /* Tournament bracket theme: Deep purples, dark blues, charcoal greys with vibrant purple accents */
+  --background: 260 20% 12%;
+  --foreground: 0 0% 100%;
 
-  --card: 225 22% 11%;
-  --card-foreground: 210 40% 98%;
-  --card-border: 225 16% 18%;
+  --card: 260 18% 18%;
+  --card-foreground: 0 0% 100%;
+  --card-border: 260 20% 22%;
 
-  --border: 225 16% 18%;
-  --input: 225 18% 24%;
-  --ring: 199 92% 52%;
+  --border: 260 15% 20%;
+  --input: 260 15% 20%;
+  --ring: 270 80% 65%;
 
-  --primary: 199 92% 52%;
-  --primary-foreground: 225 22% 10%;
+  --primary: 270 80% 65%;
+  --primary-foreground: 260 20% 8%;
 
-  --secondary: 225 18% 16%;
-  --secondary-foreground: 210 40% 98%;
+  --secondary: 260 15% 20%;
+  --secondary-foreground: 0 0% 100%;
 
-  --muted: 225 18% 16%;
-  --muted-foreground: 215 18% 70%;
+  --muted: 260 15% 16%;
+  --muted-foreground: 260 10% 70%;
 
-  --accent: 36 45% 18%;
-  --accent-foreground: 210 40% 98%;
+  --accent: 270 80% 65%;
+  --accent-foreground: 260 20% 8%;
 
   --destructive: 0 78% 58%;
-  --destructive-foreground: 225 22% 10%;
+  --destructive-foreground: 0 0% 100%;
 
-  --popover: 225 22% 11%;
-  --popover-foreground: 210 40% 98%;
+  --popover: 260 18% 18%;
+  --popover-foreground: 0 0% 100%;
 
-  --chart-1: 199 92% 52%;
-  --chart-2: 270 83% 66%;
-  --chart-3: 36 92% 60%;
-  --chart-4: 152 58% 54%;
+  --chart-1: 270 80% 65%;
+  --chart-2: 280 75% 70%;
+  --chart-3: 250 70% 60%;
+  --chart-4: 290 85% 75%;
   --chart-5: 0 78% 58%;
 
-  --sidebar: 225 22% 11%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 225 16% 18%;
-  --sidebar-primary: 199 92% 52%;
-  --sidebar-primary-foreground: 225 22% 10%;
-  --sidebar-accent: 36 45% 18%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 199 92% 52%;
+  --sidebar: 260 15% 16%;
+  --sidebar-foreground: 0 0% 100%;
+  --sidebar-border: 260 15% 20%;
+  --sidebar-primary: 270 80% 65%;
+  --sidebar-primary-foreground: 260 20% 8%;
+  --sidebar-accent: 260 15% 20%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-ring: 270 80% 65%;
 }
 
 @layer base {
@@ -290,11 +291,17 @@
 
   .grain {
     background-image:
-      radial-gradient(circle at 18% 10%, hsl(199 92% 46% / 0.16) 0, transparent 48%),
-      radial-gradient(circle at 70% 18%, hsl(36 92% 52% / 0.14) 0, transparent 55%),
-      radial-gradient(circle at 30% 75%, hsl(270 83% 60% / 0.10) 0, transparent 62%),
-      radial-gradient(circle at 85% 80%, hsl(152 58% 44% / 0.10) 0, transparent 58%),
-      radial-gradient(circle at 50% 50%, hsl(222 34% 14% / 0.035) 0, transparent 60%);
+      radial-gradient(circle at 18% 10%, hsl(270 80% 65% / 0.08) 0, transparent 48%),
+      radial-gradient(circle at 70% 18%, hsl(260 18% 18% / 0.12) 0, transparent 55%),
+      radial-gradient(circle at 30% 75%, hsl(260 15% 20% / 0.10) 0, transparent 62%),
+      radial-gradient(circle at 85% 80%, hsl(270 80% 65% / 0.06) 0, transparent 58%),
+      radial-gradient(circle at 50% 50%, hsl(260 20% 12% / 0.05) 0, transparent 60%);
+  }
+
+  .grid-dots {
+    background-image: radial-gradient(circle, hsl(var(--primary) / 0.15) 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-position: 0 0;
   }
 
   .paper {
