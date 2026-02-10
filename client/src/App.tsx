@@ -7,12 +7,14 @@ import { BracketAdminProvider } from "@/context/BracketAdminContext";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import AdminDashboard from "@/pages/admin";
+import MonthlyOverview from "@/pages/monthly-overview";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/admin" component={AdminDashboard} />
+      <Route path="/overview" component={MonthlyOverview} />
       <Route component={NotFound} />
     </Switch>
   );

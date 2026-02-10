@@ -6,6 +6,7 @@ import {
   RotateCcw,
   Settings,
   Undo2,
+  BarChart3,
 } from "lucide-react";
 import { ShaderGradientCanvas, ShaderGradient } from "@shadergradient/react";
 import { Button } from "@/components/ui/button";
@@ -144,6 +145,12 @@ export default function Dashboard() {
             <p className="text-sm text-muted-foreground">Tournament Knockout Bracket • 64 Teams</p>
           </div>
           <div className="flex items-center gap-2">
+            <Link href="/overview">
+              <Button variant="outline" className="rounded-full">
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Monthly Overview
+              </Button>
+            </Link>
             <Link href="/admin">
               <Button variant="outline" className="rounded-full">
                 <Settings className="h-4 w-4 mr-2" />
