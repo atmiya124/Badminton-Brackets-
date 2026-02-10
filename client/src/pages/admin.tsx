@@ -25,7 +25,7 @@ export default function AdminDashboard() {
   } = useBracketAdmin();
 
   // Local (draft) state – only pushed to dashboard when user clicks Save
-  const [localTeamNumbers, setLocalTeamNumbers] = useState<string[]>(() => [...round1TeamNumbers]);
+  const [localTeamNumbers, setLocalTeamNumbers] = useState<string[]>(() => [...DEFAULT_ROUND1_TEAM_NUMBERS]);
   const [localChampionNames, setLocalChampionNames] = useState(() => ({
     player1: championPlayerNames.player1,
     player2: championPlayerNames.player2,
@@ -37,7 +37,6 @@ export default function AdminDashboard() {
   const overMaxSet = new Set(overMaxSlots);
 
   const handleSaveTeams = () => {
-    if (!valid) return;
     setRound1TeamNumbers([...localTeamNumbers]);
   };
 
@@ -77,7 +76,7 @@ export default function AdminDashboard() {
               Round 1 team names
             </CardTitle>
             <CardDescription>
-              Set the team number (1–64) for each match. Order matches the bracket (left column then right column). No duplicates; numbers only.
+              Set the team number (1–100) for each match. Order matches the bracket (left column then right column). No duplicates; numbers only.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -87,7 +86,7 @@ export default function AdminDashboard() {
                   <span>Only numbers allowed in Team(s): {Array.from(nonNumericSet).sort((a, b) => a - b).join(", ")}. </span>
                 )}
                 {overMaxSet.size > 0 && (
-                  <span>Max 64 allowed. Invalid in Team(s): {Array.from(overMaxSet).sort((a, b) => a - b).join(", ")}. </span>
+                  <span>Max 100 allowed. Invalid in Team(s): {Array.from(overMaxSet).sort((a, b) => a - b).join(", ")}. </span>
                 )}
                 {duplicateSet.size > 0 && (
                   <span>No duplicate numbers. Duplicates in Team(s): {Array.from(duplicateSet).sort((a, b) => a - b).join(", ")}.</span>
@@ -192,7 +191,7 @@ export default function AdminDashboard() {
               >
                 Reset to default
               </Button>
-              <Button onClick={handleSaveTeams} disabled={!valid}>
+              <Button onClick={handleSaveTeams}>
                 <Save className="h-4 w-4 mr-2" />
                 Save teams
               </Button>
